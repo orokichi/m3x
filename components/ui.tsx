@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { x, ApiError, fmtNum, fmtTime, toast, getCreds } from '@/lib/api';
+import { x, ApiError, fmtNum, fmtTime, toast, getCreds, isLocalFollow, setLocalFollow } from '@/lib/api';
 import type { XTweet, XUser, XMedia, Page } from '@/lib/types';
 
 export const Icon = ({ n, fill, s }: { n: string; fill?: boolean; s?: number }) => <span className={'ms' + (fill ? ' fill' : '')} style={s ? { fontSize: s } : undefined}>{n}</span>;
@@ -93,7 +93,7 @@ function Card({ c }: { c: NonNullable<XTweet['card']> }) {
   );
 }
 
-const authed = () => { if (!getCreds()) { toast('この操作にはログイン設定が必要です'); return false; } return true; };
+const authed = () => { if (!getCreds()) { toast('ゲストモードでは使えません（設定からログインできます）'); return false; } return true; };
 
 export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
   const [s, setS] = useState({ liked: t.liked, likes: t.likes, rt: t.retweeted, rts: t.retweets, bm: t.bookmarked });
@@ -175,9 +175,11 @@ export function UserRow({ u, onClick }: { u: XUser; onClick?: () => void }) {
 export function FollowBtn({ u, lg }: { u: XUser; lg?: boolean }) {
   const [on, setOn] = useState(!!u.isFollowing);
   const [hover, setHover] = useState(false);
+  const guest = useRef(true);
+  useEffect(() => { guest.current = !getCreds(); if (guest.current) setOn(isLocalFollow(u.id)); }, [u.id]);
   const click = async (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
-    if (!authed()) return;
+    if (guest.current) { const n = !on; setOn(n); setLocalFollow(u, n); toast(n ? `@${u.handle} をフォローしました（この端末に保存）` : `@${u.handle} のフォローを解除しました`); return; }
     const n = !on; setOn(n);
     try { await x('follow', { id: u.id, on: n }); } catch (er: any) { setOn(!n); toast(er.message); }
   };

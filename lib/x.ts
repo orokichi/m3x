@@ -154,3 +154,64 @@ export function errInfo(e: any) {
   if (status === 404 || /not found|does not exist/i.test(msg)) return { code: 'notfound', status: 404, msg: '見つかりませんでした。' };
   return { code: 'error', status: 502, msg: 'X との通信に失敗しました: ' + msg.slice(0, 160) };
 }
+
+/* ---------- Guest mode (no login) ---------- */
+/** Curated popular Japanese accounts for the guest "おすすめ" feed (handle → id). */
+export const CURATED: Record<string, string> = {
+  YahooNewsTopics: '88846085', livedoornews: '17306975', oricon: '95207674', natalie_mu: '5649672',
+  comic_natalie: '18622184', famitsu: '5921162', Nintendo: '307902310', tbs_news: '1203930364558757888',
+  ntv_news: '264228304', FNN_News: '21380944', jijicom: '143383314', nikkei: '169480493',
+  itmedia_news: '31070671', gizmodojapan: '16181752', weathernews: '15201241', asahi: '42816371',
+  pokemon_cojp: '323091128', cinematoday: '18076042',
+};
+const tlCache = new Map<string, { at: number; v: { list: XTweet[]; next?: string } }>();
+async function cachedTimeline(r: Rettiwt, id: string, cursor?: string) {
+  const k = id + '|' + (cursor || '');
+  const c = tlCache.get(k);
+  if (c && Date.now() - c.at < 180_000) return c.v;
+  const v = tweets(await r.user.timeline(id, 20, cursor));
+  tlCache.set(k, { at: Date.now(), v });
+  if (tlCache.size > 500) tlCache.delete(tlCache.keys().next().value!);
+  return v;
+}
+const enc = (o: any) => Buffer.from(JSON.stringify(o)).toString('base64url');
+const decC = (s?: string) => { try { return s ? JSON.parse(Buffer.from(s, 'base64url').toString()) : undefined; } catch { return undefined; } };
+
+/** Merge recent posts of several accounts, newest first. Cursor = per-account cursors. */
+export async function mergedFeed(r: Rettiwt, ids: string[], cursor?: string, opts: { maxAgeDays?: number; noReplies?: boolean } = {}) {
+  const cur: Record<string, string> | undefined = decC(cursor);
+  const targets = cur ? Object.keys(cur) : [...new Set(ids)].slice(0, 40);
+  const res = await Promise.all(targets.map((id) => cachedTimeline(r, id, cur?.[id]).then((v) => [id, v] as const).catch(() => [id, undefined] as const)));
+  if (!res.some(([, v]) => v)) throw Object.assign(new Error('guest timeline unavailable'), { status: 503 });
+  const cutoff = Date.now() - (opts.maxAgeDays ?? 30) * 86400_000;
+  const seen = new Set<string>();
+  const list: XTweet[] = [];
+  const next: Record<string, string> = {};
+  for (const [id, v] of res) {
+    if (!v) continue;
+    let fresh = 0;
+    for (const t of v.list) {
+      if (!t?.user || seen.has(t.id)) continue;
+      if (new Date(t.createdAt).getTime() < cutoff) continue;
+      if (opts.noReplies && t.replyTo && t.replyTo.toLowerCase() !== t.user.handle.toLowerCase()) continue;
+      seen.add(t.id); list.push(t); fresh++;
+    }
+    if (v.next && v.next !== cur?.[id] && fresh > 0) next[id] = v.next;
+  }
+  list.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  return { list, next: Object.keys(next).length ? enc(next) : undefined };
+}
+
+const userCache = new Map<string, { at: number; u: XUser }>();
+export async function guestUser(r: Rettiwt, handle: string) {
+  const k = handle.toLowerCase();
+  const c = userCache.get(k);
+  if (c && Date.now() - c.at < 3_600_000) return c.u;
+  const u = normUser(await r.user.details(handle));
+  if (u) userCache.set(k, { at: Date.now(), u });
+  return u;
+}
+export async function curatedUsers(r: Rettiwt) {
+  const us = await Promise.all(Object.keys(CURATED).map((h) => guestUser(r, h).catch(() => undefined)));
+  return us.filter(Boolean) as XUser[];
+}

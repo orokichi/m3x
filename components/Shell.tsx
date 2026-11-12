@@ -7,7 +7,7 @@ import { x, getCreds, shrink, toast, fmtNum } from '@/lib/api';
 import type { XTweet, XUser, XTrend } from '@/lib/types';
 import { Avatar, Icon, RichText, Verified } from './ui';
 
-const Me = createContext<{ me: XUser | null; authed: boolean }>({ me: null, authed: false });
+const Me = createContext<{ me: XUser | null; authed: boolean; ready: boolean }>({ me: null, authed: false, ready: false });
 export const useMe = () => useContext(Me);
 export const SEED = '#1d9bf0';
 
@@ -58,7 +58,7 @@ function Composer({ me, onClose, replyTo, quote }: { me: XUser | null; onClose: 
   );
 }
 
-function RightBar() {
+function RightBar({ path }: { path: string }) {
   const [trends, setTrends] = useState<XTrend[] | null>(null);
   const [q, setQ] = useState('');
   const router = useRouter();
@@ -68,7 +68,7 @@ function RightBar() {
       <form className="sbox" onSubmit={(e) => { e.preventDefault(); if (q.trim()) router.push(`/search?q=${encodeURIComponent(q.trim())}`); }}>
         <Icon n="search" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="検索" aria-label="検索" />
       </form>
-      <section className="rcard">
+      {!path.startsWith('/explore') && <section className="rcard">
         <h2>日本のトレンド</h2>
         {trends === null && <div className="muted small" style={{ padding: 16 }}>読み込み中…</div>}
         {trends?.slice(0, 10).map((t, i) => (
@@ -77,7 +77,7 @@ function RightBar() {
           </Link>
         ))}
         <Link href="/explore" className="trend sl lnk">さらに表示</Link>
-      </section>
+      </section>}
       <footer className="muted small" style={{ padding: '0 16px' }}>M3X · 非公式クライアント（X Corp. とは無関係）</footer>
     </aside>
   );
@@ -92,13 +92,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const [me, setMe] = useState<XUser | null>(null);
   const [authed, setAuthed] = useState(false);
+  const [ready, setReady] = useState(false);
   const [comp, setComp] = useState<null | { replyTo?: XTweet; quote?: XTweet }>(null);
   const [toasts, setToasts] = useState<{ id: number; m: string }[]>([]);
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const th = () => applyTheme(SEED, 'system'); th(); mq.addEventListener('change', th);
-    const auth = () => { const c = !!getCreds(); setAuthed(c); if (c) x<XUser>('me').then(setMe).catch(() => setMe(null)); else setMe(null); };
+    const auth = () => { const c = !!getCreds(); setAuthed(c); setReady(true); if (c) x<XUser>('me').then(setMe).catch(() => setMe(null)); else setMe(null); };
     auth();
     const onC = (e: any) => setComp(e.detail || {});
     const onT = (e: any) => { const id = Date.now() + Math.random(); setToasts((t) => [...t, { id, m: e.detail }]); setTimeout(() => setToasts((t) => t.filter((i) => i.id !== id)), 3500); };
@@ -107,31 +108,32 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return () => { mq.removeEventListener('change', th); window.removeEventListener('m3x-auth', auth); window.removeEventListener('m3x-compose', onC); window.removeEventListener('m3x-toast', onT); };
   }, []);
 
+  const nav = authed ? NAV : NAV.filter(([h]) => h === '/' || h === '/explore' || h === '/settings');
   const href = (h: string) => (h === '/profile' ? (me ? `/u/${me.handle}` : '/settings') : h);
   const on = (h: string) => (h === '/' ? path === '/' : h === '/profile' ? !!me && path.startsWith(`/u/${me.handle}`) : path.startsWith(h));
 
   return (
-    <Me.Provider value={{ me, authed }}>
+    <Me.Provider value={{ me, authed, ready }}>
       <div className="layout">
         <nav className="leftnav">
           <Link href="/" className="logo-x" aria-label="M3X"><span className="lm">X</span><span className="lt">M3X</span></Link>
-          {NAV.map(([h, ic, label]) => (
+          {nav.map(([h, ic, label]) => (
             <Link key={h} href={href(h)} className={'nav-i' + (on(h) ? ' on' : '')}><span className="pill"><Icon n={ic} fill={on(h)} /></span><span className="nl">{label}</span></Link>
           ))}
-          <button className="btn filled lg post-btn" onClick={() => (authed ? compose() : toast('ログイン設定が必要です'))}><Icon n="edit" /><span className="nl">ポストする</span></button>
+          {authed && <button className="btn filled lg post-btn" onClick={() => compose()}><Icon n="edit" /><span className="nl">ポストする</span></button>}
           <span className="spacer" />
           {me ? <Link href={`/u/${me.handle}`} className="me-card sl"><Avatar u={me} /><div className="nl ur-t"><b className="ell">{me.name}</b><span className="muted ell">@{me.handle}</span></div></Link>
-            : <Link href="/settings" className="me-card sl"><span className="av ph" style={{ width: 40, height: 40 }}><Icon n="login" /></span><div className="nl"><b>ログイン設定</b></div></Link>}
+            : ready && <div className="me-card"><span className="av ph" style={{ width: 40, height: 40 }}><Icon n="visibility" /></span><div className="nl ur-t"><b>ゲストモード</b><span className="muted small">ログインなしで閲覧中</span></div></div>}
         </nav>
         <main className="center">{children}</main>
-        <RightBar />
+        <RightBar path={path} />
       </div>
       <nav className="bottomnav">
-        {[NAV[0], NAV[1], NAV[2], NAV[3], NAV[5]].map(([h, ic, label]) => (
+        {(authed ? [NAV[0], NAV[1], NAV[2], NAV[3], NAV[5]] : nav).map(([h, ic, label]) => (
           <Link key={h} href={href(h)} className={on(h) ? 'on' : ''} aria-label={label}><span className="pill"><Icon n={ic} fill={on(h)} /></span></Link>
         ))}
       </nav>
-      {!path.startsWith('/settings') && <button className="fab" onClick={() => (authed ? compose() : toast('ログイン設定が必要です'))} aria-label="ポストする"><Icon n="edit" /></button>}
+      {authed && !path.startsWith('/settings') && <button className="fab" onClick={() => compose()} aria-label="ポストする"><Icon n="edit" /></button>}
       {comp && <Composer me={me} {...comp} onClose={() => setComp(null)} />}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.m}</div>)}</div>
     </Me.Provider>

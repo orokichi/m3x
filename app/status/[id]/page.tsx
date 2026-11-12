@@ -8,7 +8,7 @@ import type { XTweet } from '@/lib/types';
 
 export default function Status({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { me } = useMe();
+  const { me, authed } = useMe();
   const [d, setD] = useState<{ tweet: XTweet; parents: XTweet[] } | null>(null);
   const [err, setErr] = useState<Error | null>(null);
   const load = () => { setErr(null); setD(null); x('tweet', { id }).then(setD).catch(setErr); };
@@ -37,8 +37,10 @@ export default function Status({ params }: { params: Promise<{ id: string }> }) 
           </div>
           <Actions t={t} big />
         </article>
-        <button className="reply-bar sl" onClick={() => compose({ replyTo: t })}><span className="muted">返信をポスト</span><span className="btn filled sm">返信</span></button>
-        <Feed<XTweet> op="replies" args={{ id }} keyOf={(r) => r.id} render={(r) => <TweetCard t={r} />} empty="まだ返信はありません" />
+        {authed ? <>
+          <button className="reply-bar sl" onClick={() => compose({ replyTo: t })}><span className="muted">返信をポスト</span><span className="btn filled sm">返信</span></button>
+          <Feed<XTweet> op="replies" args={{ id }} keyOf={(r) => r.id} render={(r) => <TweetCard t={r} />} empty="まだ返信はありません" />
+        </> : <p className="muted small" style={{ padding: 16, textAlign: 'center' }}>返信の表示はログイン時のみ（設定から任意でログインできます）</p>}
       </>}
     </>
   );

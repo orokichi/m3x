@@ -61,3 +61,18 @@ export function shrink(file: File, max = 2048): Promise<string> {
     img.onerror = ng; img.src = URL.createObjectURL(file);
   });
 }
+
+/* Local (guest-mode) follows, stored only in this browser. */
+export interface LocalFollow { id: string; handle: string; name: string; avatar?: string }
+const FKEY = 'm3x.follows';
+export function getFollows(): LocalFollow[] {
+  if (typeof window === 'undefined') return [];
+  try { return JSON.parse(localStorage.getItem(FKEY) || '[]'); } catch { return []; }
+}
+export const isLocalFollow = (id: string) => getFollows().some((f) => f.id === id);
+export function setLocalFollow(u: { id: string; handle: string; name: string; avatar?: string }, on: boolean) {
+  const l = getFollows().filter((f) => f.id !== u.id);
+  if (on) l.unshift({ id: u.id, handle: u.handle, name: u.name, avatar: u.avatar });
+  localStorage.setItem(FKEY, JSON.stringify(l));
+  window.dispatchEvent(new Event('m3x-follows'));
+}
