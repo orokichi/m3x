@@ -553,6 +553,33 @@ a.cite:hover { border-radius: 5px; text-decoration: none; }
 .ag-drop { position: absolute; inset: 8px; z-index: 5; display: grid; place-content: center; justify-items: center; gap: 6px; border-radius: var(--r-xl); border: 2px dashed var(--md-primary);
   background: color-mix(in srgb, var(--md-primary-container) 92%, transparent); color: var(--md-on-primary-container); font: var(--t-title-s); pointer-events: none; animation: rise .35s var(--spring); }
 
+/* ---------- Actions mode (Agent screen operation) ---------- */
+.ag-mode { display: inline-flex; align-items: center; gap: 5px; height: 36px; padding: 0 13px; border-radius: var(--r-full); flex-shrink: 0; align-self: center;
+  background: var(--md-surface-container-highest); color: var(--md-on-surface-variant); border: 1.5px solid var(--md-outline-variant); font: var(--t-label-m);
+  transition: background .25s var(--emph), color .25s, border-color .25s, border-radius .35s var(--spring), transform .3s var(--spring); }
+.ag-mode:active { transform: scale(.94); border-radius: var(--r-m); }
+.ag-mode.on { background: var(--md-primary); color: var(--md-on-primary); border-color: var(--md-primary); border-radius: var(--r-l); }
+.ag-q { margin-top: 8px; padding: 10px 12px; border-radius: var(--r-l); background: var(--md-tertiary-container); color: var(--md-on-tertiary-container); display: flex; flex-direction: column; gap: 8px; animation: stepIn .45s var(--spring); }
+.ag-q .muted { color: inherit; opacity: .75; }
+.ag-q-h { display: flex; align-items: center; gap: 6px; font: var(--t-label-l); }
+.ag-q-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.ag-q-opts .chip { background: var(--md-surface); color: var(--md-on-surface); }
+.ag-q-opts .chip[disabled] { opacity: .38; pointer-events: none; }
+
+/* ---------- M3X Mouse (AI virtual cursor) ---------- */
+.mx-mouse { position: fixed; left: 0; top: 0; z-index: 300; pointer-events: none; will-change: transform;
+  transition-property: transform; transition-timing-function: var(--spring-spatial); }
+.mx-mouse-cur { position: relative; display: block; margin: -3px 0 0 -5px; filter: drop-shadow(0 3px 8px rgb(0 0 0 / .35)); transition: transform .18s var(--spring); }
+.mx-mouse.press .mx-mouse-cur { transform: scale(.8) rotate(-6deg); }
+.mx-mouse-cur::after { content: ''; position: absolute; left: -4px; top: -4px; width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid var(--md-primary); opacity: 0; }
+.mx-mouse.press .mx-mouse-cur::after { animation: mxping .45s var(--emph); }
+@keyframes mxping { 0% { opacity: .9; transform: scale(.4); } 100% { opacity: 0; transform: scale(2); } }
+.mx-mouse-label { position: absolute; left: 24px; top: 22px; white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis;
+  padding: 5px 11px; border-radius: var(--r-full); background: var(--md-inverse-surface); color: var(--md-inverse-on-surface); font: var(--t-label-m); box-shadow: var(--elev-2); }
+.mx-mouse.drag .mx-mouse-label { background: var(--md-primary); color: var(--md-on-primary); }
+.mx-ring { position: fixed; z-index: 290; pointer-events: none; border: 3px solid var(--md-primary); border-radius: 18px; animation: mxring .95s var(--emph) forwards; }
+@keyframes mxring { 0% { opacity: 0; transform: scale(1.1); } 18% { opacity: 1; } 100% { opacity: 0; transform: scale(.96); } }
+
 /* ---------- first-run tutorial ---------- */
 .tut { position: absolute; inset: 0; z-index: 20; display: flex; align-items: flex-end; padding: 12px; background: color-mix(in srgb, var(--md-scrim) 38%, transparent); animation: fade .25s; }
 .tut-card { width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 18px; border-radius: var(--r-xl); background: var(--md-surface-container-high); color: var(--md-on-surface); box-shadow: var(--elev-3); animation: rise .5s var(--spring); }

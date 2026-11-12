@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { x, ApiError, fmtNum, fmtTime, toast, getCreds, isLocalFollow, setLocalFollow, img } from '@/lib/api';
 import type { XTweet, XUser, XMedia, Page } from '@/lib/types';
-import { MIME, MIME_MEDIA, snap, kmedia, pickMemo, useMemoOn, addCtx } from '@/lib/memo';
+import { MIME, MIME_MEDIA, snap, kmedia, pickMemo, useMemoOn, addCtx, registerSrc } from '@/lib/memo';
 import { useGroq } from '@/lib/ai';
 import AgentIcon from './AgentIcon';
 
@@ -126,7 +126,7 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
   const stop = (f: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); f(); };
   return (
     <div className={'actions' + (big ? ' big' : '')}>
-      <button className="act sl c-blue" onClick={stop(() => authed() && window.dispatchEvent(new CustomEvent('m3x-compose', { detail: { replyTo: t } })))} aria-label="返信"><Icon n="chat_bubble" /><span>{fmtNum(t.replies) || ''}</span></button>
+      <button className="act sl c-blue" data-action="reply" data-tid={t.id} data-label={`返信（@${t.user.handle}のポスト）`} onClick={stop(() => authed() && window.dispatchEvent(new CustomEvent('m3x-compose', { detail: { replyTo: t } })))} aria-label="返信"><Icon n="chat_bubble" /><span>{fmtNum(t.replies) || ''}</span></button>
       <div className="act-wrap">
         <button className={'act sl c-green' + (s.rt ? ' on' : '')} onClick={stop(() => setMenu(!menu))} aria-label="リポスト"><Icon n="repeat" /><span>{fmtNum(s.rts) || ''}</span></button>
         {menu && <div className="menu" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setMenu(false)}>
@@ -134,10 +134,10 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
           <button onClick={() => { setMenu(false); authed() && window.dispatchEvent(new CustomEvent('m3x-compose', { detail: { quote: t } })); }}><Icon n="edit_square" />引用</button>
         </div>}
       </div>
-      <button className={'act sl c-pink' + (s.liked ? ' on' : '')} onClick={stop(() => toggle('like'))} aria-label="いいね"><Icon n="favorite" fill={s.liked} /><span>{fmtNum(s.likes) || ''}</span></button>
+      <button className={'act sl c-pink' + (s.liked ? ' on' : '')} data-action="like" data-tid={t.id} data-label={`いいね（@${t.user.handle}のポスト）`} onClick={stop(() => toggle('like'))} aria-label="いいね"><Icon n="favorite" fill={s.liked} /><span>{fmtNum(s.likes) || ''}</span></button>
       {!big && <span className="act views"><Icon n="bar_chart" /><span>{fmtNum(t.views) || ''}</span></span>}
       <div className="act-r">
-        <button className={'act sl c-blue' + (s.bm ? ' on' : '')} onClick={stop(() => toggle('bookmark'))} aria-label="ブックマーク"><Icon n="bookmark" fill={s.bm} /></button>
+        <button className={'act sl c-blue' + (s.bm ? ' on' : '')} data-action="bookmark" data-tid={t.id} data-label={`ブックマーク（@${t.user.handle}のポスト）`} onClick={stop(() => toggle('bookmark'))} aria-label="ブックマーク"><Icon n="bookmark" fill={s.bm} /></button>
         <div className="act-wrap">
           <button className="act sl c-blue" onClick={stop(() => (more ? setSmenu(!smenu) : share()))} aria-label="共有" aria-haspopup={more ? 'menu' : undefined}><Icon n="ios_share" /></button>
           {smenu && <div className="menu r" role="menu" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setSmenu(false)}>
@@ -155,13 +155,16 @@ export function TweetCard({ t, thread }: { t: XTweet; thread?: boolean }) {
   const router = useRouter();
   const go = () => { if (!window.getSelection()?.toString()) router.push(`/status/${t.id}`); };
   const memoOn = useMemoOn();
+  /* Register the post's Src so the Actions executor can drag it to Keep. */
+  useEffect(() => { registerSrc(snap(t)); }, [t]);
   const drag = (e: React.DragEvent) => {
     e.dataTransfer.setData(MIME, JSON.stringify(snap(t)));
     e.dataTransfer.setData('text/uri-list', `https://x.com/${t.user.handle}/status/${t.id}`);
     e.dataTransfer.effectAllowed = 'copy';
   };
   return (
-    <article className={'tweet' + (thread ? ' thread' : '') + (memoOn ? ' dragga' : '')} onClick={go} draggable={memoOn || undefined} onDragStart={memoOn ? drag : undefined}>
+    <article className={'tweet' + (thread ? ' thread' : '') + (memoOn ? ' dragga' : '')} onClick={go} draggable={memoOn || undefined} onDragStart={memoOn ? drag : undefined}
+      data-action="post" data-tid={t.id} data-label={`@${t.user.handle}: ${t.text.replace(/https?:\/\/t\.co\/\w+/g, '').replace(/\s+/g, ' ').trim().slice(0, 42)}`}>
       {t.rtBy && <div className="rt-by"><Icon n="repeat" s={16} /><Link href={`/u/${t.rtBy.handle}`} onClick={(e) => e.stopPropagation()}>{t.rtBy.name}さんがリポスト</Link></div>}
       <div className="tw-body">
         <div className="tw-left"><Link href={`/u/${t.user.handle}`} onClick={(e) => e.stopPropagation()}><Avatar u={t.user} /></Link>{thread && <i className="tline" />}</div>
@@ -186,7 +189,7 @@ export function TweetCard({ t, thread }: { t: XTweet; thread?: boolean }) {
 
 export function UserRow({ u, onClick }: { u: XUser; onClick?: () => void }) {
   return (
-    <Link href={`/u/${u.handle}`} className="urow sl" onClick={onClick}>
+    <Link href={`/u/${u.handle}`} className="urow sl" onClick={onClick} data-action="user" data-tid={u.handle} data-label={`@${u.handle} のプロフィール`}>
       <Avatar u={u} />
       <div className="ur-t">
         <div className="row-flex" style={{ gap: 4 }}><b className="ell">{u.name}</b>{u.verified && <Verified />}</div>
@@ -328,7 +331,7 @@ export function Feed<T>({ op, args, render, empty, keyOf }: { op: string; args?:
 export function Tabs({ tabs, value, onChange }: { tabs: [string, string][]; value: string; onChange: (v: string) => void }) {
   return (
     <div className="tabs" role="tablist">
-      {tabs.map(([k, label]) => <button key={k} role="tab" className={'tab sl' + (value === k ? ' on' : '')} onClick={() => onChange(k)}><span>{label}</span></button>)}
+      {tabs.map(([k, label]) => <button key={k} role="tab" className={'tab sl' + (value === k ? ' on' : '')} onClick={() => onChange(k)} data-action="tab" data-tid={k} data-label={label}><span>{label}</span></button>)}
     </div>
   );
 }
@@ -338,7 +341,7 @@ export function Header({ title, sub, back = true, children }: { title?: React.Re
   return (
     <header className="colhead">
       <div className="ch-row">
-        {back && <button className="icon-btn sl" onClick={() => (history.length > 1 ? router.back() : router.push('/'))} aria-label="戻る"><Icon n="arrow_back" /></button>}
+        {back && <button className="icon-btn sl" data-action="back" data-label="戻る" onClick={() => (history.length > 1 ? router.back() : router.push('/'))} aria-label="戻る"><Icon n="arrow_back" /></button>}
         <div className="ch-t">{title && (typeof title === 'string' ? <h1>{title}</h1> : title)}{sub && <div className="muted small">{sub}</div>}</div>
       </div>
       {children}

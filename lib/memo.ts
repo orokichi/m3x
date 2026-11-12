@@ -111,6 +111,12 @@ export function readDrop2(e: React.DragEvent): Drop | null {
 }
 export const pickMemo = (s: Src) => window.dispatchEvent(new CustomEvent('m3x-memo-pick', { detail: s }));
 
+/* ---------- tweet -> Src registry (lets the Actions executor resolve a
+   rendered post back to its Src for drag-to-Keep) ---------- */
+const srcReg = new Map<string, Src>();
+export function registerSrc(s: Src) { if (srcReg.size > 400) srcReg.clear(); srcReg.set(s.id, s); }
+export const srcById = (id: string) => srcReg.get(id);
+
 /* ---------- M3X Agent context posts (persisted so mobile "add" works before the panel mounts) ---------- */
 export const MAX_CTX = 7;
 const AK = 'm3x.agentCtx', AEV = 'm3x-agentctx';

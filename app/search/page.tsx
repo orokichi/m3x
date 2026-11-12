@@ -23,7 +23,7 @@ function Search() {
   return (
     <>
       <Header title={<form className="sbox wide" onSubmit={(e) => { e.preventDefault(); if (v.trim()) go(v.trim()); }}>
-          <Icon n="search" /><input value={v} onChange={(e) => setV(e.target.value)} placeholder="検索" />
+          <Icon n="search" /><input value={v} onChange={(e) => setV(e.target.value)} placeholder="検索" data-action="search" data-label="検索ボックス" />
         </form>}>
         <Tabs tabs={[['top', '話題'], ['latest', '最新'], ['people', 'ユーザー'], ['media', 'メディア']]} value={tab} onChange={(f) => go(q, f)} />
       </Header>
