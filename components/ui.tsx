@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { x, ApiError, fmtNum, fmtTime, toast, getCreds, isLocalFollow, setLocalFollow } from '@/lib/api';
+import { x, ApiError, fmtNum, fmtTime, toast, getCreds, isLocalFollow, setLocalFollow, img } from '@/lib/api';
 import type { XTweet, XUser, XMedia, Page } from '@/lib/types';
 
 export const Icon = ({ n, fill, s }: { n: string; fill?: boolean; s?: number }) => <span className={'ms' + (fill ? ' fill' : '')} style={s ? { fontSize: s } : undefined}>{n}</span>;
@@ -10,7 +10,7 @@ export const Spinner = () => <div className="spin-wrap"><div className="spinner"
 export const Verified = () => <span className="ms fill verified" title="認証済み">verified</span>;
 
 export function Avatar({ u, size = 40 }: { u?: XUser; size?: number }) {
-  return u?.avatar ? <img className="av" src={u.avatar} alt="" width={size} height={size} style={{ width: size, height: size }} loading="lazy" referrerPolicy="no-referrer" />
+  return u?.avatar ? <img className="av" src={img(u.avatar)} alt="" width={size} height={size} style={{ width: size, height: size }} loading="lazy" referrerPolicy="no-referrer" />
     : <div className="av ph" style={{ width: size, height: size }}>{u?.name?.[0] || '?'}</div>;
 }
 
@@ -52,16 +52,16 @@ export function MediaGrid({ media }: { media: XMedia[] }) {
       <div className={`mgrid n${Math.min(media.length, 4)}`} onClick={(e) => e.stopPropagation()}>
         {media.slice(0, 4).map((m, i) => m.type === 'photo'
           ? <button key={i} className="mcell" onClick={() => setView(i)} style={one && m.w && m.h ? { aspectRatio: `${Math.max(m.w / m.h, 0.75)}` } : undefined}>
-              <img src={m.url + (m.url.includes('?') ? '' : '?name=medium')} alt="" loading="lazy" referrerPolicy="no-referrer" />
+              <img src={img(m.url, 'medium')} alt="" loading="lazy" referrerPolicy="no-referrer" />
             </button>
           : <div key={i} className="mcell" style={m.w && m.h ? { aspectRatio: `${Math.max(m.w / m.h, 0.75)}` } : undefined}>
-              <video src={m.video} poster={m.thumb} controls={m.type === 'video'} autoPlay={m.type === 'gif'} loop={m.type === 'gif'} muted={m.type === 'gif'} playsInline preload="none" />
+              <video src={m.video} poster={img(m.thumb, 'small')} controls={m.type === 'video'} autoPlay={m.type === 'gif'} loop={m.type === 'gif'} muted={m.type === 'gif'} playsInline preload="none" />
               {m.type === 'gif' && <span className="gif">GIF</span>}
             </div>)}
       </div>
       {view != null && (
         <div className="lightbox" onClick={(e) => { e.stopPropagation(); setView(null); }}>
-          <img src={media[view].url + '?name=orig'} alt="" referrerPolicy="no-referrer" />
+          <img src={img(media[view].url, 'orig')} alt="" referrerPolicy="no-referrer" />
           <button className="icon-btn lb-x" aria-label="閉じる"><Icon n="close" /></button>
           {media.length > 1 && <>
             <button className="icon-btn lb-p" onClick={(e) => { e.stopPropagation(); setView((view + media.length - 1) % media.length); }}><Icon n="chevron_left" /></button>
@@ -87,7 +87,7 @@ function Quote({ t }: { t: XTweet }) {
 function Card({ c }: { c: NonNullable<XTweet['card']> }) {
   return (
     <a className="lcard sl" href={c.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-      {c.image && <img src={c.image} alt="" loading="lazy" referrerPolicy="no-referrer" />}
+      {c.image && <img src={img(c.image)} alt="" loading="lazy" referrerPolicy="no-referrer" />}
       <div className="lc-t"><span className="muted small">{c.domain}</span><b>{c.title}</b>{c.desc && <span className="muted small clamp2">{c.desc}</span>}</div>
     </a>
   );

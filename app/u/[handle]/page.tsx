@@ -1,7 +1,7 @@
 'use client';
 import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { x, fmtNum } from '@/lib/api';
+import { x, fmtNum, img } from '@/lib/api';
 import { Avatar, ErrorBox, Feed, FollowBtn, Header, Icon, Spinner, Tabs, TweetCard, Verified, RichText } from '@/components/ui';
 import { useMe } from '@/components/Shell';
 import type { XTweet, XUser } from '@/lib/types';
@@ -23,7 +23,7 @@ export default function Profile({ params }: { params: Promise<{ handle: string }
       {err && <ErrorBox e={err} retry={load} />}
       {!u && !err && <Spinner />}
       {u && <>
-        <div className="banner">{u.banner && <img src={u.banner + '/1500x500'} alt="" referrerPolicy="no-referrer" />}</div>
+        <div className="banner">{u.banner && <img src={img(u.banner + '/1500x500')} alt="" referrerPolicy="no-referrer" />}</div>
         <div className="pf">
           <div className="pf-top"><div className="pf-av"><Avatar u={u} size={128} /></div>{mine ? <a className="btn outlined" href="https://x.com/settings/profile" target="_blank" rel="noreferrer">プロフィールを編集</a> : <FollowBtn u={u} lg />}</div>
           <h2 className="pf-name">{u.name}{u.verified && <Verified />}</h2>

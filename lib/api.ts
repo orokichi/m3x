@@ -76,3 +76,14 @@ export function setLocalFollow(u: { id: string; handle: string; name: string; av
   localStorage.setItem(FKEY, JSON.stringify(l));
   window.dispatchEvent(new Event('m3x-follows'));
 }
+
+/** Proxy X images through our server (works where pbs.twimg.com is blocked). */
+export const img = (u?: string, name?: string) => {
+  if (!u) return '';
+  let s = u;
+  if (name && /pbs\.twimg\.com\/media\//.test(s) && !s.includes('?')) {
+    const m = s.match(/^(.*)\.(jpg|jpeg|png|webp)$/);
+    s = m ? `${m[1]}?format=${m[2] === 'jpeg' ? 'jpg' : m[2]}&name=${name}` : `${s}?name=${name}`;
+  }
+  return /^https:\/\/(pbs|abs|ton)\.twimg\.com\//.test(s) ? `/api/img?u=${encodeURIComponent(s)}` : s;
+};
