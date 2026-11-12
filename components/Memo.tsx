@@ -172,7 +172,7 @@ export function MemoExplorer({ page }: { page?: boolean }) {
     <section className={'memo-x' + (page ? ' page' : '')} aria-label="メモ">
       <div className="mx-head">
         {f ? <button className="icon-btn sl" onClick={() => (n ? setNid(null) : setFid(null))} aria-label="戻る"><Icon n="arrow_back" /></button> : <span className="mx-logo"><Icon n="sticky_note_2" fill /></span>}
-        <nav className="mx-crumbs" aria-label="場所">
+        <nav className="mx-crumbs" aria-label="パンくずリスト">
           <button className={!f ? 'cur' : ''} onClick={() => { setFid(null); setNid(null); }}>メモ</button>
           {f && <><Icon n="chevron_right" s={18} /><button className={'ell' + (!n ? ' cur' : '')} onClick={() => setNid(null)} title={f.name}>{f.name}</button></>}
           {n && <><Icon n="chevron_right" s={18} /><span className="ell cur">{n.title || '無題のメモ'}</span></>}

@@ -62,7 +62,7 @@ function Composer({ me, onClose, replyTo, quote }: { me: XUser | null; onClose: 
 }
 
 function RightBar({ path, memo }: { path: string; memo: boolean }) {
-  if (memo) return <aside className="rightbar memo-mode"><MemoExplorer /></aside>;
+  if (memo && !path.startsWith('/memo')) return <aside className="rightbar memo-mode"><MemoExplorer /></aside>;
   return <Trends path={path} />;
 }
 

@@ -287,6 +287,7 @@ code, kbd { font-family: ui-monospace, monospace; background: var(--md-surface-c
 /* ---------- nav extras ---------- */
 @media (min-width: 1061px) { .nav-i.memo-only { display: none; } }
 @media (max-width: 699px) { .bottomnav .pill { width: min(60px, calc(100% - 6px)); } .bottomnav a.on .pill { width: min(64px, calc(100% - 2px)); } }
+.menu button { white-space: nowrap; }
 .menu.r { left: auto; right: 0; transform-origin: top right; }
 
 /* ---------- switch (M3) ---------- */
