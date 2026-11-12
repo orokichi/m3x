@@ -20,6 +20,9 @@ function Suggest() {
 export default function Home() {
   const { authed, ready } = useMe();
   const [tab, setTab] = useState('foryou');
+  /* Restore the tab the user was on when they return (e.g. back from a post). */
+  useEffect(() => { try { const s = sessionStorage.getItem('m3x.homeTab'); if (s === 'foryou' || s === 'following') setTab(s); } catch { /* ignore */ } }, []);
+  const changeTab = (v: string) => { setTab(v); try { sessionStorage.setItem('m3x.homeTab', v); } catch { /* ignore */ } };
   const [ids, setIds] = useState<string[] | null>(null);
   useEffect(() => {
     const f = () => setIds(getFollows().map((u) => u.id));
@@ -30,7 +33,7 @@ export default function Home() {
     <>
       <header className="colhead sticky">
         <div className="ch-row show-sm"><div className="ch-t"><h1 className="brand">M3X</h1></div></div>
-        <Tabs tabs={[['foryou', 'おすすめ'], ['following', 'フォロー中']]} value={tab} onChange={setTab} />
+        <Tabs tabs={[['foryou', 'おすすめ'], ['following', 'フォロー中']]} value={tab} onChange={changeTab} />
       </header>
       {ids === null || !ready ? <Spinner />
         : guestFollowing && !ids.length ? <Suggest />

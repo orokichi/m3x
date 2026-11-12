@@ -212,6 +212,31 @@ export function FollowBtn({ u, lg }: { u: XUser; lg?: boolean }) {
     {on ? (hover ? 'フォロー解除' : 'フォロー中') : 'フォロー'}</button>;
 }
 
+/* ---------- feed state snapshot (scroll restoration) ----------
+   App Router unmounts page components on navigation, so a feed loses its
+   items + scroll position and the browser's own scroll restoration lands
+   on an (initially) empty page. We snapshot each feed (keyed by op+args)
+   in sessionStorage and, only for back/forward (popstate) returns, seed
+   the items synchronously-ish and restore the scroll offset once painted. */
+let lastPopAt = 0;
+if (typeof window !== 'undefined') window.addEventListener('popstate', () => { lastPopAt = Date.now(); });
+
+interface FeedSnap<T> { items: T[]; next?: string; done: boolean; scrollY: number; ts: number }
+function feedKey(op: string, ak: string) {
+  let h = 0; const s = op + '|' + ak;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return 'm3x.feed.' + (h >>> 0).toString(36);
+}
+function readSnap<T>(k: string): FeedSnap<T> | null {
+  try { const v = sessionStorage.getItem(k); if (!v) return null; const s = JSON.parse(v); return s && Array.isArray(s.items) ? s as FeedSnap<T> : null; } catch { return null; }
+}
+function writeSnap<T>(k: string, s: FeedSnap<T>) {
+  try { sessionStorage.setItem(k, JSON.stringify(s)); } catch { try { sessionStorage.removeItem(k); } catch { /* ignore */ } }
+}
+function patchSnapScroll(k: string, y: number) {
+  try { const v = sessionStorage.getItem(k); if (!v) return; const s = JSON.parse(v); if (s && Array.isArray(s.items)) { s.scrollY = y; sessionStorage.setItem(k, JSON.stringify(s)); } } catch { /* ignore */ }
+}
+
 /** Infinite-scroll feed of any cursored op. */
 export function Feed<T>({ op, args, render, empty, keyOf }: { op: string; args?: Record<string, any>; render: (item: T) => React.ReactNode; empty?: string; keyOf: (t: T) => string }) {
   const [items, setItems] = useState<T[]>([]);
@@ -222,6 +247,10 @@ export function Feed<T>({ op, args, render, empty, keyOf }: { op: string; args?:
   const sentinel = useRef<HTMLDivElement>(null);
   const busy = useRef(false);
   const ak = JSON.stringify(args || {});
+  const fkey = feedKey(op, ak);
+  const firstRun = useRef(true);
+  const pendingScroll = useRef<number | null>(null);
+  const scrollYRef = useRef(0);
 
   const load = useCallback(async (cursor?: string, reset?: boolean) => {
     if (busy.current) return; busy.current = true; setLoading(true); setErr(null);
@@ -237,7 +266,47 @@ export function Feed<T>({ op, args, render, empty, keyOf }: { op: string; args?:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [op, ak]);
 
-  useEffect(() => { setItems([]); setNext(undefined); setDone(false); load(undefined, true); }, [load]);
+  /* First mount: restore the snapshot instead of refetching when returning
+     via back/forward, or when it is still fresh (< 3 min) on a fresh visit. */
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      const s = readSnap<T>(fkey);
+      const back = Date.now() - lastPopAt < 2000;
+      if (s && s.items.length && (back || Date.now() - s.ts < 3 * 60 * 1000)) {
+        setItems(s.items); setNext(s.next); setDone(s.done);
+        scrollYRef.current = s.scrollY;
+        if (back) pendingScroll.current = s.scrollY;
+        return;
+      }
+    }
+    setItems([]); setNext(undefined); setDone(false); load(undefined, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load]);
+
+  /* Persist items/cursor as they change (scroll offset is patched separately). */
+  useEffect(() => {
+    if (items.length) writeSnap(fkey, { items: items.slice(0, 60), next, done, scrollY: scrollYRef.current, ts: Date.now() });
+  }, [items, next, done, fkey]);
+
+  /* Track the scroll offset for this feed and keep the snapshot in sync. */
+  useEffect(() => {
+    let raf = 0;
+    const onScroll = () => {
+      scrollYRef.current = window.scrollY;
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; patchSnapScroll(fkey, scrollYRef.current); });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => { window.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); patchSnapScroll(fkey, window.scrollY); };
+  }, [fkey]);
+
+  /* Apply the pending scroll restore once the seeded items have painted. */
+  useEffect(() => {
+    if (pendingScroll.current == null || !items.length) return;
+    const y = pendingScroll.current; pendingScroll.current = null;
+    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
+  }, [items]);
+
   useEffect(() => {
     const el = sentinel.current; if (!el) return;
     const io = new IntersectionObserver((es) => { if (es[0].isIntersecting && next && !done && !busy.current && !err) load(next); }, { rootMargin: '1200px' });
