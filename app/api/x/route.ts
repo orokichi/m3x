@@ -21,6 +21,13 @@ export async function POST(req: NextRequest) {
         if (a.tab === 'following') { data = ids.length ? await mergedFeed(r, ids, a.cursor, { maxAgeDays: 60 }) : { list: [] }; break; }
         data = await mergedFeed(r, [...Object.values(CURATED), ...ids], a.cursor, { maxAgeDays: 7, noReplies: true }); break;
       }
+      case 'gpool': {
+        const hs = (Array.isArray(a.handles) ? a.handles : []).map((h: any) => String(h).replace(/^@/, '')).filter((h: string) => /^\w{1,15}$/.test(h)).slice(0, 5);
+        const extra = (await Promise.all(hs.map((h: string) => guestUser(r, h).catch(() => undefined)))).filter(Boolean).map((u: any) => u.id as string);
+        const fids: string[] = (Array.isArray(a.ids) ? a.ids : []).map(String).filter((i: string) => /^\d+$/.test(i));
+        data = await mergedFeed(r, [...extra, ...fids, ...Object.values(CURATED)], undefined, { maxAgeDays: 30 });
+        break;
+      }
       case 'gusers': data = { list: await curatedUsers(r) }; break;
       case 'tweet': {
         const t = normTweet(await r.tweet.details(a.id));

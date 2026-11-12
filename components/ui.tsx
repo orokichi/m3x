@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { x, ApiError, fmtNum, fmtTime, toast, getCreds, isLocalFollow, setLocalFollow, img } from '@/lib/api';
 import type { XTweet, XUser, XMedia, Page } from '@/lib/types';
+import { MIME, snap, pickMemo, useMemoOn } from '@/lib/memo';
 
 export const Icon = ({ n, fill, s }: { n: string; fill?: boolean; s?: number }) => <span className={'ms' + (fill ? ' fill' : '')} style={s ? { fontSize: s } : undefined}>{n}</span>;
 export const Spinner = () => <div className="spin-wrap"><div className="spinner" /></div>;
@@ -98,6 +99,8 @@ const authed = () => { if (!getCreds()) { toast('ゲストモードでは使え�
 export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
   const [s, setS] = useState({ liked: t.liked, likes: t.likes, rt: t.retweeted, rts: t.retweets, bm: t.bookmarked });
   const [menu, setMenu] = useState(false);
+  const [smenu, setSmenu] = useState(false);
+  const memoOn = useMemoOn();
   const toggle = async (op: 'like' | 'retweet' | 'bookmark') => {
     if (!authed()) return;
     const prev = s;
@@ -125,7 +128,13 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
       {!big && <span className="act views"><Icon n="bar_chart" /><span>{fmtNum(t.views) || ''}</span></span>}
       <div className="act-r">
         <button className={'act sl c-blue' + (s.bm ? ' on' : '')} onClick={stop(() => toggle('bookmark'))} aria-label="ブックマーク"><Icon n="bookmark" fill={s.bm} /></button>
-        <button className="act sl c-blue" onClick={stop(share)} aria-label="共有"><Icon n="ios_share" /></button>
+        <div className="act-wrap">
+          <button className="act sl c-blue" onClick={stop(() => (memoOn ? setSmenu(!smenu) : share()))} aria-label="共有" aria-haspopup={memoOn ? 'menu' : undefined}><Icon n="ios_share" /></button>
+          {smenu && <div className="menu r" role="menu" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setSmenu(false)}>
+            <button role="menuitem" onClick={() => { setSmenu(false); share(); }}><Icon n="ios_share" />共有・リンクをコピー</button>
+            <button role="menuitem" onClick={() => { setSmenu(false); pickMemo(snap(t)); }}><Icon n="sticky_note_2" />メモに追加</button>
+          </div>}
+        </div>
       </div>
     </div>
   );
@@ -134,8 +143,14 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
 export function TweetCard({ t, thread }: { t: XTweet; thread?: boolean }) {
   const router = useRouter();
   const go = () => { if (!window.getSelection()?.toString()) router.push(`/status/${t.id}`); };
+  const memoOn = useMemoOn();
+  const drag = (e: React.DragEvent) => {
+    e.dataTransfer.setData(MIME, JSON.stringify(snap(t)));
+    e.dataTransfer.setData('text/uri-list', `https://x.com/${t.user.handle}/status/${t.id}`);
+    e.dataTransfer.effectAllowed = 'copy';
+  };
   return (
-    <article className={'tweet' + (thread ? ' thread' : '')} onClick={go}>
+    <article className={'tweet' + (thread ? ' thread' : '') + (memoOn ? ' dragga' : '')} onClick={go} draggable={memoOn || undefined} onDragStart={memoOn ? drag : undefined}>
       {t.rtBy && <div className="rt-by"><Icon n="repeat" s={16} /><Link href={`/u/${t.rtBy.handle}`} onClick={(e) => e.stopPropagation()}>{t.rtBy.name}さんがリポスト</Link></div>}
       <div className="tw-body">
         <div className="tw-left"><Link href={`/u/${t.user.handle}`} onClick={(e) => e.stopPropagation()}><Avatar u={t.user} /></Link>{thread && <i className="tline" />}</div>

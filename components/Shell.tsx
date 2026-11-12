@@ -6,6 +6,9 @@ import { applyTheme } from '@/lib/theme';
 import { x, getCreds, shrink, toast, fmtNum } from '@/lib/api';
 import type { XTweet, XUser, XTrend } from '@/lib/types';
 import { Avatar, Icon, RichText, Verified } from './ui';
+import { MemoExplorer, MemoPicker } from './Memo';
+import { useMemoOn } from '@/lib/memo';
+import { useGroq } from '@/lib/ai';
 
 const Me = createContext<{ me: XUser | null; authed: boolean; ready: boolean }>({ me: null, authed: false, ready: false });
 export const useMe = () => useContext(Me);
@@ -58,7 +61,12 @@ function Composer({ me, onClose, replyTo, quote }: { me: XUser | null; onClose: 
   );
 }
 
-function RightBar({ path }: { path: string }) {
+function RightBar({ path, memo }: { path: string; memo: boolean }) {
+  if (memo) return <aside className="rightbar memo-mode"><MemoExplorer /></aside>;
+  return <Trends path={path} />;
+}
+
+function Trends({ path }: { path: string }) {
   const [trends, setTrends] = useState<XTrend[] | null>(null);
   const [q, setQ] = useState('');
   const router = useRouter();
@@ -85,8 +93,11 @@ function RightBar({ path }: { path: string }) {
 
 const NAV = [
   ['/', 'home', 'ホーム'], ['/explore', 'search', '話題を検索'], ['/notifications', 'notifications', '通知'],
-  ['/bookmarks', 'bookmark', 'ブックマーク'], ['/lists', 'list_alt', 'リスト'], ['/profile', 'person', 'プロフィール'], ['/settings', 'settings', '設定'],
+  ['/bookmarks', 'bookmark', 'ブックマーク'], ['/super-search', 'auto_awesome', 'Super Search'], ['/following', 'group', 'フォロー'],
+  ['/lists', 'list_alt', 'リスト'], ['/profile', 'person', 'プロフィール'], ['/memo', 'sticky_note_2', 'メモ'], ['/settings', 'settings', '設定'],
 ] as const;
+const GUEST = new Set(['/', '/explore', '/super-search', '/following', '/memo', '/settings']);
+const MOBILE_AUTHED = new Set(['/', '/explore', '/super-search', '/following', '/notifications', '/bookmarks', '/profile', '/memo']);
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
@@ -95,6 +106,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [comp, setComp] = useState<null | { replyTo?: XTweet; quote?: XTweet }>(null);
   const [toasts, setToasts] = useState<{ id: number; m: string }[]>([]);
+  const memo = useMemoOn();
+  const groq = useGroq();
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -108,7 +121,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return () => { mq.removeEventListener('change', th); window.removeEventListener('m3x-auth', auth); window.removeEventListener('m3x-compose', onC); window.removeEventListener('m3x-toast', onT); };
   }, []);
 
-  const nav = authed ? NAV : NAV.filter(([h]) => h === '/' || h === '/explore' || h === '/settings');
+  const nav = NAV.filter(([h]) => (authed || GUEST.has(h)) && (h !== '/super-search' || groq) && (h !== '/memo' || memo));
   const href = (h: string) => (h === '/profile' ? (me ? `/u/${me.handle}` : '/settings') : h);
   const on = (h: string) => (h === '/' ? path === '/' : h === '/profile' ? !!me && path.startsWith(`/u/${me.handle}`) : path.startsWith(h));
 
@@ -118,7 +131,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         <nav className="leftnav">
           <Link href="/" className="logo-x" aria-label="M3X"><span className="lm">X</span><span className="lt">M3X</span></Link>
           {nav.map(([h, ic, label]) => (
-            <Link key={h} href={href(h)} className={'nav-i' + (on(h) ? ' on' : '')}><span className="pill"><Icon n={ic} fill={on(h)} /></span><span className="nl">{label}</span></Link>
+            <Link key={h} href={href(h)} className={'nav-i' + (on(h) ? ' on' : '') + (h === '/memo' ? ' memo-only' : '')}><span className="pill"><Icon n={ic} fill={on(h)} /></span><span className="nl">{label}</span></Link>
           ))}
           {authed && <button className="btn filled lg post-btn" onClick={() => compose()}><Icon n="edit" /><span className="nl">ポストする</span></button>}
           <span className="spacer" />
@@ -126,14 +139,15 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             : ready && <div className="me-card"><span className="av ph" style={{ width: 40, height: 40 }}><Icon n="visibility" /></span><div className="nl ur-t"><b>ゲストモード</b><span className="muted small">ログインなしで閲覧中</span></div></div>}
         </nav>
         <main className="center">{children}</main>
-        <RightBar path={path} />
+        <RightBar path={path} memo={memo} />
       </div>
       <nav className="bottomnav">
-        {(authed ? [NAV[0], NAV[1], NAV[2], NAV[3], NAV[5]] : nav).map(([h, ic, label]) => (
+        {(authed ? nav.filter(([h]) => MOBILE_AUTHED.has(h)) : nav).map(([h, ic, label]) => (
           <Link key={h} href={href(h)} className={on(h) ? 'on' : ''} aria-label={label}><span className="pill"><Icon n={ic} fill={on(h)} /></span></Link>
         ))}
       </nav>
       {authed && !path.startsWith('/settings') && <button className="fab" onClick={() => compose()} aria-label="ポストする"><Icon n="edit" /></button>}
+      <MemoPicker />
       {comp && <Composer me={me} {...comp} onClose={() => setComp(null)} />}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.m}</div>)}</div>
     </Me.Provider>

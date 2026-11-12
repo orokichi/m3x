@@ -4,6 +4,52 @@ import { useRouter } from 'next/navigation';
 import { x, getCreds, setCreds, type Creds } from '@/lib/api';
 import { Avatar, Header, Icon } from '@/components/ui';
 import type { XUser } from '@/lib/types';
+import { getGroqKey, setGroqKey, groq } from '@/lib/ai';
+import { useMemoOn, setMemoOn } from '@/lib/memo';
+
+function AiSettings() {
+  const [k, setK] = useState('');
+  const [has, setHas] = useState(false);
+  const [st, setSt] = useState<{ ok?: boolean; err?: string; busy?: boolean }>({});
+  useEffect(() => { const g = getGroqKey(); setK(g); setHas(!!g); }, []);
+  const save = async () => {
+    const v = k.trim(); if (!v) return;
+    setGroqKey(v); setHas(true); setSt({ busy: true });
+    try { await groq([{ role: 'user', content: 'ok' }], { max: 1 }); setSt({ ok: true }); }
+    catch (e: any) { setSt({ err: e.message }); }
+  };
+  return (
+    <section className="scard" id="ai">
+      <h2><span className="ms" style={{ verticalAlign: '-5px', marginRight: 6 }}>auto_awesome</span>AI（Groq Console API キー）</h2>
+      <p className="muted small" style={{ marginTop: 0 }}>登録すると左メニューに「Super Search」が出て、フォロー画面で AI 要約が使えます。キーはこの端末（localStorage）にだけ保存され、リクエストごとに送られるだけでサーバーには保存・記録されません。</p>
+      <ol className="steps small">
+        <li><a className="lnk" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">console.groq.com/keys</a> を開いてログイン（無料）</li>
+        <li>「Create API Key」→ 名前を付けて作成し、<code>gsk_</code> で始まるキーをコピー</li>
+        <li>下に貼って「保存して接続テスト」</li>
+      </ol>
+      <label className="field" style={{ marginTop: 12 }}><span>Groq API キー</span>
+        <input type="password" autoComplete="off" spellCheck={false} value={k} onChange={(e) => setK(e.target.value)} placeholder="gsk_…" /></label>
+      <div className="row-flex" style={{ flexWrap: 'wrap' }}>
+        <button className="btn filled" onClick={save} disabled={st.busy || !k.trim()}><Icon n="key" />{st.busy ? '確認中…' : '保存して接続テスト'}</button>
+        {has && <button className="btn outlined" onClick={() => { setGroqKey(''); setK(''); setHas(false); setSt({}); }}><Icon n="delete" />キーを削除</button>}
+      </div>
+      {st.ok && <p className="c-primary small"><b>接続できました。</b>Super Search が使えます。</p>}
+      {st.err && <p className="c-err small">{st.err}</p>}
+    </section>
+  );
+}
+
+function MemoSettings() {
+  const on = useMemoOn();
+  return (
+    <section className="scard" id="memo">
+      <label className="sw-row">
+        <div><h2 style={{ margin: 0 }}>メモ機能</h2><p className="muted small" style={{ margin: '4px 0 0' }}>右サイドバーの「日本のトレンド」をメモ（フォルダ・付箋）に置き換えます。ポストをドラッグしてメモに参照として追加できます。スマホではメニューの「メモ」から開けます。データはこの端末にだけ保存されます。</p></div>
+        <input type="checkbox" className="switch" role="switch" checked={on} onChange={(e) => setMemoOn(e.target.checked)} aria-label="メモ機能" />
+      </label>
+    </section>
+  );
+}
 
 export default function Settings() {
   const router = useRouter();
@@ -58,6 +104,9 @@ export default function Settings() {
           {st.ok && <div className="ok-box"><Avatar u={st.ok} /><div><b>{st.ok.name}</b> としてログインしました</div><button className="btn tonal sm" onClick={() => router.push('/')}>ホームへ</button></div>}
           {st.err && <p className="c-err">{st.err}</p>}
         </section>
+
+        <AiSettings />
+        <MemoSettings />
 
         <section className="scard">
           <h2>うまく動かないとき</h2>
