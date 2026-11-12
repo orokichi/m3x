@@ -2,12 +2,18 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { x, ApiError, fmtNum, fmtTime, toast, getCreds, isLocalFollow, setLocalFollow, img } from '@/lib/api';
 import type { XTweet, XUser, XMedia, Page } from '@/lib/types';
-import { MIME, snap, pickMemo, useMemoOn } from '@/lib/memo';
+import { MIME, MIME_MEDIA, snap, kmedia, pickMemo, useMemoOn, addCtx } from '@/lib/memo';
+import { useGroq } from '@/lib/ai';
+
+const Lightbox = dynamic(() => import('./Lightbox'), { ssr: false });
 
 export const Icon = ({ n, fill, s }: { n: string; fill?: boolean; s?: number }) => <span className={'ms' + (fill ? ' fill' : '')} style={s ? { fontSize: s } : undefined}>{n}</span>;
-export const Spinner = () => <div className="spin-wrap"><div className="spinner" /></div>;
+/** M3 Expressive loading indicator (morphing shape). */
+export const Loader = ({ s = 38, c }: { s?: number; c?: boolean }) => <span className={'m3-load' + (c ? ' contained' : '')} style={{ width: s, height: s }} role="progressbar" aria-label="読み込み中"><i /></span>;
+export const Spinner = () => <div className="spin-wrap"><Loader /></div>;
 export const Verified = () => <span className="ms fill verified" title="認証済み">verified</span>;
 
 export function Avatar({ u, size = 40 }: { u?: XUser; size?: number }) {
@@ -44,32 +50,33 @@ export function RichText({ t }: { t: Pick<XTweet, 'text' | 'urls'> }) {
   );
 }
 
-export function MediaGrid({ media }: { media: XMedia[] }) {
+export function MediaGrid({ media, t }: { media: XMedia[]; t?: XTweet }) {
   const [view, setView] = useState<number | null>(null);
+  const memoOn = useMemoOn();
   if (!media.length) return null;
   const one = media.length === 1 ? media[0] : null;
+  const dragOn = memoOn && !!t;
+  /** Drag a single image/video/GIF (separate from dragging the whole post). */
+  const drag = (m: XMedia) => (e: React.DragEvent) => {
+    e.stopPropagation();
+    e.dataTransfer.setData(MIME_MEDIA, JSON.stringify({ src: snap(t!), media: kmedia(m) }));
+    e.dataTransfer.setData(MIME, JSON.stringify(snap(t!)));
+    e.dataTransfer.setData('text/uri-list', m.type === 'photo' ? m.url : `https://x.com/${t!.user.handle}/status/${t!.id}`);
+    e.dataTransfer.effectAllowed = 'copy';
+  };
   return (
     <>
       <div className={`mgrid n${Math.min(media.length, 4)}`} onClick={(e) => e.stopPropagation()}>
         {media.slice(0, 4).map((m, i) => m.type === 'photo'
-          ? <button key={i} className="mcell" onClick={() => setView(i)} style={one && m.w && m.h ? { aspectRatio: `${Math.max(m.w / m.h, 0.75)}` } : undefined}>
-              <img src={img(m.url, 'medium')} alt="" loading="lazy" referrerPolicy="no-referrer" />
+          ? <button key={i} className="mcell" onClick={() => setView(i)} style={one && m.w && m.h ? { aspectRatio: `${Math.max(m.w / m.h, 0.75)}` } : undefined} draggable={dragOn || undefined} onDragStart={dragOn ? drag(m) : undefined}>
+              <img src={img(m.url, 'medium')} alt="" loading="lazy" referrerPolicy="no-referrer" draggable={false} />
             </button>
-          : <div key={i} className="mcell" style={m.w && m.h ? { aspectRatio: `${Math.max(m.w / m.h, 0.75)}` } : undefined}>
+          : <div key={i} className="mcell" style={m.w && m.h ? { aspectRatio: `${Math.max(m.w / m.h, 0.75)}` } : undefined} draggable={dragOn || undefined} onDragStart={dragOn ? drag(m) : undefined}>
               <video src={m.video} poster={img(m.thumb, 'small')} controls={m.type === 'video'} autoPlay={m.type === 'gif'} loop={m.type === 'gif'} muted={m.type === 'gif'} playsInline preload="none" />
               {m.type === 'gif' && <span className="gif">GIF</span>}
             </div>)}
       </div>
-      {view != null && (
-        <div className="lightbox" onClick={(e) => { e.stopPropagation(); setView(null); }}>
-          <img src={img(media[view].url, 'orig')} alt="" referrerPolicy="no-referrer" />
-          <button className="icon-btn lb-x" aria-label="閉じる"><Icon n="close" /></button>
-          {media.length > 1 && <>
-            <button className="icon-btn lb-p" onClick={(e) => { e.stopPropagation(); setView((view + media.length - 1) % media.length); }}><Icon n="chevron_left" /></button>
-            <button className="icon-btn lb-n" onClick={(e) => { e.stopPropagation(); setView((view + 1) % media.length); }}><Icon n="chevron_right" /></button>
-          </>}
-        </div>
-      )}
+      {view != null && <Lightbox urls={media.filter((m) => m.type === 'photo').map((m) => m.url)} start={media.filter((m) => m.type === 'photo').indexOf(media[view])} onClose={() => setView(null)} />}
     </>
   );
 }
@@ -80,7 +87,7 @@ function Quote({ t }: { t: XTweet }) {
     <div className="quote sl" onClick={(e) => { e.stopPropagation(); router.push(`/status/${t.id}`); }}>
       <div className="qhead"><Avatar u={t.user} size={20} /><b>{t.user.name}</b>{t.user.verified && <Verified />}<span className="muted">@{t.user.handle} · {fmtTime(t.createdAt)}</span></div>
       {t.text && <div className="qtext"><RichText t={t} /></div>}
-      <MediaGrid media={t.media} />
+      <MediaGrid media={t.media} t={t} />
     </div>
   );
 }
@@ -101,6 +108,8 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
   const [menu, setMenu] = useState(false);
   const [smenu, setSmenu] = useState(false);
   const memoOn = useMemoOn();
+  const groqOn = useGroq();
+  const more = memoOn || groqOn;
   const toggle = async (op: 'like' | 'retweet' | 'bookmark') => {
     if (!authed()) return;
     const prev = s;
@@ -129,10 +138,11 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
       <div className="act-r">
         <button className={'act sl c-blue' + (s.bm ? ' on' : '')} onClick={stop(() => toggle('bookmark'))} aria-label="ブックマーク"><Icon n="bookmark" fill={s.bm} /></button>
         <div className="act-wrap">
-          <button className="act sl c-blue" onClick={stop(() => (memoOn ? setSmenu(!smenu) : share()))} aria-label="共有" aria-haspopup={memoOn ? 'menu' : undefined}><Icon n="ios_share" /></button>
+          <button className="act sl c-blue" onClick={stop(() => (more ? setSmenu(!smenu) : share()))} aria-label="共有" aria-haspopup={more ? 'menu' : undefined}><Icon n="ios_share" /></button>
           {smenu && <div className="menu r" role="menu" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setSmenu(false)}>
             <button role="menuitem" onClick={() => { setSmenu(false); share(); }}><Icon n="ios_share" />共有・リンクをコピー</button>
-            <button role="menuitem" onClick={() => { setSmenu(false); pickMemo(snap(t)); }}><Icon n="sticky_note_2" />メモに追加</button>
+            <button role="menuitem" onClick={() => { setSmenu(false); pickMemo(snap(t)); }}><Icon n="sticky_note_2" />メモ・Keep に追加</button>
+            {groqOn && <button role="menuitem" onClick={() => { setSmenu(false); if (addCtx(snap(t))) window.dispatchEvent(new Event('m3x-open-agent')); }}><Icon n="smart_toy" />M3X Agent に追加</button>}
           </div>}
         </div>
       </div>
@@ -163,7 +173,7 @@ export function TweetCard({ t, thread }: { t: XTweet; thread?: boolean }) {
           </div>
           {t.replyTo && !thread && <div className="muted small">返信先: <Link className="lnk" href={`/u/${t.replyTo}`} onClick={(e) => e.stopPropagation()}>@{t.replyTo}</Link></div>}
           {t.text && <div className="tw-text"><RichText t={t} /></div>}
-          <MediaGrid media={t.media} />
+          <MediaGrid media={t.media} t={t} />
           {t.card && !t.media.length && <Card c={t.card} />}
           {t.quoted && <Quote t={t.quoted} />}
           <Actions t={t} />

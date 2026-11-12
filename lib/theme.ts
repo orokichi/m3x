@@ -1,5 +1,6 @@
 'use client';
-import { argbFromHex, hexFromArgb, Hct, SchemeVibrant, MaterialDynamicColors } from '@material/material-color-utilities';
+/* Heavy part (material-color-utilities): only imported dynamically when the seed changes / no cache. */
+import { argbFromHex, hexFromArgb, Hct, SchemeVibrant, SchemeTonalSpot, MaterialDynamicColors } from '@material/material-color-utilities';
 
 const ROLES = [
   'primary','onPrimary','primaryContainer','onPrimaryContainer','secondary','onSecondary','secondaryContainer','onSecondaryContainer',
@@ -10,17 +11,8 @@ const ROLES = [
 const kebab = (s: string) => s.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase());
 
 export function schemeCss(seed: string, dark: boolean) {
-  const scheme = new SchemeVibrant(Hct.fromInt(argbFromHex(seed)), dark, 0);
+  const hct = Hct.fromInt(argbFromHex(seed));
+  // Very low-chroma seeds (greys) read better as tonal spot than vibrant.
+  const scheme = hct.chroma < 12 ? new SchemeTonalSpot(hct, dark, 0) : new SchemeVibrant(hct, dark, 0);
   return ROLES.map((r) => `--md-${kebab(r)}:${hexFromArgb((MaterialDynamicColors as any)[r].getArgb(scheme))};`).join('');
-}
-
-export function applyTheme(seed: string, mode: 'system' | 'light' | 'dark') {
-  const dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  let el = document.getElementById('m3-theme') as HTMLStyleElement | null;
-  if (!el) { el = document.createElement('style'); el.id = 'm3-theme'; document.head.appendChild(el); }
-  el.textContent = `:root{${schemeCss(seed, dark)}color-scheme:${dark ? 'dark' : 'light'}}`;
-  document.documentElement.dataset.dark = dark ? '1' : '0';
-  const meta = document.querySelector('meta[name="theme-color"]');
-  const bg = getComputedStyle(document.documentElement).getPropertyValue('--md-surface').trim();
-  if (meta && bg) meta.setAttribute('content', bg);
 }

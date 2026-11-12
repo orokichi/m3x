@@ -1,18 +1,20 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { applyTheme } from '@/lib/theme';
+import { applyTheme } from '@/lib/themeStore';
 import { x, getCreds, shrink, toast, fmtNum } from '@/lib/api';
 import type { XTweet, XUser, XTrend } from '@/lib/types';
-import { Avatar, Icon, RichText, Verified } from './ui';
-import { MemoExplorer, MemoPicker } from './Memo';
-import { useMemoOn } from '@/lib/memo';
+import { Avatar, Icon, RichText } from './ui';
+import { useMemoOn, type Src } from '@/lib/memo';
+
+const SidePanel = dynamic(() => import('./SidePanel'), { ssr: false, loading: () => <div className="sp sp-skel" /> });
+const MemoPicker = dynamic(() => import('./Memo'), { ssr: false });
 import { useGroq } from '@/lib/ai';
 
 const Me = createContext<{ me: XUser | null; authed: boolean; ready: boolean }>({ me: null, authed: false, ready: false });
 export const useMe = () => useContext(Me);
-export const SEED = '#1d9bf0';
 
 export function compose(detail: { replyTo?: XTweet; quote?: XTweet } = {}) { window.dispatchEvent(new CustomEvent('m3x-compose', { detail })); }
 
@@ -62,7 +64,10 @@ function Composer({ me, onClose, replyTo, quote }: { me: XUser | null; onClose: 
 }
 
 function RightBar({ path, memo }: { path: string; memo: boolean }) {
-  if (memo && !path.startsWith('/memo')) return <aside className="rightbar memo-mode"><MemoExplorer /></aside>;
+  const [wide, setWide] = useState(false);
+  useEffect(() => { const mq = window.matchMedia('(min-width: 1061px)'); const f = () => setWide(mq.matches); f(); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f); }, []);
+  const isMemo = path.startsWith('/memo');
+  if (memo || isMemo) return <aside className="rightbar memo-mode">{wide && <SidePanel agentOnly={isMemo} />}</aside>;
   return <Trends path={path} />;
 }
 
@@ -93,8 +98,8 @@ function Trends({ path }: { path: string }) {
 
 const NAV = [
   ['/', 'home', 'ホーム'], ['/explore', 'search', '話題を検索'], ['/notifications', 'notifications', '通知'],
-  ['/bookmarks', 'bookmark', 'ブックマーク'], ['/super-search', 'auto_awesome', 'Super Search'], ['/following', 'group', 'フォロー'],
-  ['/lists', 'list_alt', 'リスト'], ['/profile', 'person', 'プロフィール'], ['/memo', 'sticky_note_2', 'メモ'], ['/settings', 'settings', '設定'],
+  ['/bookmarks', 'bookmark', 'ブックマーク'], ['/super-search', 'auto_awesome', 'Super Search'], ['/memo', 'sticky_note_2', 'メモ'], ['/following', 'group', 'フォロー'],
+  ['/lists', 'list_alt', 'リスト'], ['/profile', 'person', 'プロフィール'], ['/settings', 'settings', '設定'],
 ] as const;
 const GUEST = new Set(['/', '/explore', '/super-search', '/following', '/memo', '/settings']);
 const MOBILE_AUTHED = new Set(['/', '/explore', '/super-search', '/following', '/notifications', '/bookmarks', '/profile', '/memo']);
@@ -106,22 +111,24 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [comp, setComp] = useState<null | { replyTo?: XTweet; quote?: XTweet }>(null);
   const [toasts, setToasts] = useState<{ id: number; m: string }[]>([]);
+  const [pick, setPick] = useState<Src | null>(null);
   const memo = useMemoOn();
   const groq = useGroq();
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const th = () => applyTheme(SEED, 'system'); th(); mq.addEventListener('change', th);
+    const th = () => { applyTheme(); }; th(); mq.addEventListener('change', th);
     const auth = () => { const c = !!getCreds(); setAuthed(c); setReady(true); if (c) x<XUser>('me').then(setMe).catch(() => setMe(null)); else setMe(null); };
     auth();
     const onC = (e: any) => setComp(e.detail || {});
     const onT = (e: any) => { const id = Date.now() + Math.random(); setToasts((t) => [...t, { id, m: e.detail }]); setTimeout(() => setToasts((t) => t.filter((i) => i.id !== id)), 3500); };
-    window.addEventListener('m3x-auth', auth); window.addEventListener('m3x-compose', onC); window.addEventListener('m3x-toast', onT);
+    const onP = (e: any) => setPick(e.detail);
+    window.addEventListener('m3x-auth', auth); window.addEventListener('m3x-compose', onC); window.addEventListener('m3x-toast', onT); window.addEventListener('m3x-memo-pick', onP);
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-    return () => { mq.removeEventListener('change', th); window.removeEventListener('m3x-auth', auth); window.removeEventListener('m3x-compose', onC); window.removeEventListener('m3x-toast', onT); };
+    return () => { mq.removeEventListener('change', th); window.removeEventListener('m3x-auth', auth); window.removeEventListener('m3x-compose', onC); window.removeEventListener('m3x-toast', onT); window.removeEventListener('m3x-memo-pick', onP); };
   }, []);
 
-  const nav = NAV.filter(([h]) => (authed || GUEST.has(h)) && (h !== '/super-search' || groq) && (h !== '/memo' || memo));
+  const nav = NAV.filter(([h]) => (authed || GUEST.has(h)) && (h !== '/super-search' || groq));
   const href = (h: string) => (h === '/profile' ? (me ? `/u/${me.handle}` : '/settings') : h);
   const on = (h: string) => (h === '/' ? path === '/' : h === '/profile' ? !!me && path.startsWith(`/u/${me.handle}`) : path.startsWith(h));
 
@@ -131,7 +138,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         <nav className="leftnav">
           <Link href="/" className="logo-x" aria-label="M3X"><span className="lm">X</span><span className="lt">M3X</span></Link>
           {nav.map(([h, ic, label]) => (
-            <Link key={h} href={href(h)} className={'nav-i' + (on(h) ? ' on' : '') + (h === '/memo' ? ' memo-only' : '')}><span className="pill"><Icon n={ic} fill={on(h)} /></span><span className="nl">{label}</span></Link>
+            <Link key={h} href={href(h)} className={'nav-i' + (on(h) ? ' on' : '')}><span className="pill"><Icon n={ic} fill={on(h)} /></span><span className="nl">{label}</span></Link>
           ))}
           {authed && <button className="btn filled lg post-btn" onClick={() => compose()}><Icon n="edit" /><span className="nl">ポストする</span></button>}
           <span className="spacer" />
@@ -147,7 +154,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         ))}
       </nav>
       {authed && !path.startsWith('/settings') && <button className="fab" onClick={() => compose()} aria-label="ポストする"><Icon n="edit" /></button>}
-      <MemoPicker />
+      {pick && <MemoPicker src={pick} onClose={() => setPick(null)} />}
       {comp && <Composer me={me} {...comp} onClose={() => setComp(null)} />}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.m}</div>)}</div>
     </Me.Provider>

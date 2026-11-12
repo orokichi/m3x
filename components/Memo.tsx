@@ -1,23 +1,25 @@
 'use client';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import { img } from '@/lib/api';
-import { memo, useMemo2, readDrop, MIME, MAX_SRC, type Folder, type Note, type Src } from '@/lib/memo';
+import { memo, useMemo2, readDrop2, hasDrop, ensureKeep, KEEP, MAX_SRC, type Folder, type Note, type Src, type Item, type Drop } from '@/lib/memo';
 import { Icon } from './ui';
+
+const Lightbox = dynamic(() => import('./Lightbox'), { ssr: false });
 
 const mapUrl = (p: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p)}`;
 
-/** Drop target for posts dragged from the timeline. */
-function useDrop(onPost: (s: Src) => void) {
+/** Drop target for posts / single media dragged from the timeline. */
+export function useDrop(on: (d: Drop) => void) {
   const [over, setOver] = useState(false);
-  const has = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes(MIME);
   return {
     over,
     props: {
-      onDragEnter: (e: React.DragEvent) => { if (has(e)) { e.preventDefault(); setOver(true); } },
-      onDragOver: (e: React.DragEvent) => { if (has(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } },
+      onDragEnter: (e: React.DragEvent) => { if (hasDrop(e)) { e.preventDefault(); setOver(true); } },
+      onDragOver: (e: React.DragEvent) => { if (hasDrop(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } },
       onDragLeave: (e: React.DragEvent) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false); },
-      onDrop: (e: React.DragEvent) => { setOver(false); const s = readDrop(e); if (s) { e.preventDefault(); e.stopPropagation(); onPost(s); } },
+      onDrop: (e: React.DragEvent) => { setOver(false); const d = readDrop2(e); if (d) { e.preventDefault(); e.stopPropagation(); on(d); } },
     },
   };
 }
@@ -43,30 +45,71 @@ function Confirm({ label, onYes, onNo }: { label: string; onYes: () => void; onN
   );
 }
 
+const fIcon = (f: Folder) => (f.keep ? 'bookmarks' : 'folder');
+const fCount = (f: Folder) => f.notes.length + (f.items?.length || 0);
+
 function FolderRow({ f, open }: { f: Folder; open: () => void }) {
   const [mode, setMode] = useState<'' | 'rename' | 'del'>('');
-  const d = useDrop(() => { open(); });
-  useEffect(() => { if (!d.over) return; const t = setTimeout(open, 650); return () => clearTimeout(t); /* spring-loaded folder */ }, [d.over]); // eslint-disable-line react-hooks/exhaustive-deps
+  const d = useDrop((x) => memo.addItem(x, f.id));
+  useEffect(() => { if (!d.over || f.keep) return; const t = setTimeout(open, 900); return () => clearTimeout(t); /* spring-loaded folder */ }, [d.over]); // eslint-disable-line react-hooks/exhaustive-deps
   if (mode === 'rename') return <div className="mx-row"><Icon n="folder" /><NameInput init={f.name} ph="フォルダ名" onDone={(v) => { if (v) memo.renameFolder(f.id, v); setMode(''); }} /></div>;
-  if (mode === 'del') return <div className="mx-row"><Confirm label={`「${f.name}」と中のメモ${f.notes.length}件を削除しますか？`} onYes={() => memo.delFolder(f.id)} onNo={() => setMode('')} /></div>;
+  if (mode === 'del') return <div className="mx-row"><Confirm label={`「${f.name}」と中身${fCount(f)}件を削除しますか？`} onYes={() => memo.delFolder(f.id)} onNo={() => setMode('')} /></div>;
   return (
-    <div className={'mx-row sl' + (d.over ? ' over' : '')} {...d.props}>
+    <div className={'mx-row sl' + (d.over ? ' over' : '') + (f.keep ? ' keep' : '')} data-fid={f.id} {...d.props}>
       <button className="mx-open" onClick={open} title={f.name}>
-        <Icon n="folder" fill /><span className="ell">{f.name}</span><span className="mx-count">{f.notes.length}</span>
+        <Icon n={fIcon(f)} fill /><span className="ell">{f.name}{f.keep && <span className="mx-sub">ポストや画像をドロップして保存</span>}</span><span className="mx-count">{fCount(f)}</span>
       </button>
-      <button className="icon-btn sm" onClick={() => setMode('rename')} aria-label="名前を変更" title="名前を変更"><Icon n="edit" s={18} /></button>
-      <button className="icon-btn sm" onClick={() => setMode('del')} aria-label="削除" title="削除"><Icon n="delete" s={18} /></button>
+      {f.keep ? <span className="mx-lock" title="Keep は削除できません"><Icon n="lock" s={16} /></span> : <>
+        <button className="icon-btn sm" onClick={() => setMode('rename')} aria-label="名前を変更" title="名前を変更"><Icon n="edit" s={18} /></button>
+        <button className="icon-btn sm" onClick={() => setMode('del')} aria-label="削除" title="削除"><Icon n="delete" s={18} /></button>
+      </>}
     </div>
   );
 }
 
-function NoteCard({ f, n, open }: { f: Folder; n: Note; open: () => void }) {
-  const d = useDrop((s) => memo.addSource(f.id, n.id, s));
+/** Saved posts / media as a grid. */
+export function ItemGrid({ f, items, compact }: { f: Folder; items: Item[]; compact?: boolean }) {
+  const [view, setView] = useState<Item | null>(null);
+  if (!items.length) return null;
+  return (
+    <>
+      <div className={'kp-grid' + (compact ? ' compact' : '')}>
+        {items.map((it) => (
+          <div key={it.id} className={'kp-tile' + (it.media ? ' media' : ' post')}>
+            {it.media ? (
+              <button className="kp-media sl" onClick={() => setView(it)} title={`@${it.src.handle}: ${it.src.text.slice(0, 60)}`}>
+                <img src={img(it.media.type === 'photo' ? it.media.url : it.media.thumb || it.media.url, 'small')} alt="" loading="lazy" referrerPolicy="no-referrer" draggable={false} />
+                {it.media.type !== 'photo' && <span className="kp-badge"><Icon n={it.media.type === 'gif' ? 'gif' : 'play_arrow'} s={16} fill /></span>}
+              </button>
+            ) : (
+              <Link href={`/status/${it.src.id}`} className="kp-post sl">
+                <span className="kp-ph">
+                  {it.src.avatar ? <img className="av" src={img(it.src.avatar)} alt="" width={18} height={18} referrerPolicy="no-referrer" loading="lazy" /> : <span className="av ph" style={{ width: 18, height: 18 }}>{it.src.name[0]}</span>}
+                  <b className="ell">{it.src.name}</b>
+                </span>
+                <span className="kp-txt">{it.src.text || '（本文なし）'}</span>
+                {it.src.image && <img className="kp-pimg" src={img(it.src.image, 'thumb')} alt="" referrerPolicy="no-referrer" loading="lazy" onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')} />}
+              </Link>
+            )}
+            <button className="kp-x" onClick={() => memo.delItem(f.id, it.id)} aria-label="削除" title="削除"><Icon n="close" s={16} /></button>
+          </div>
+        ))}
+      </div>
+      {view?.media && (view.media.type === 'photo'
+        ? <Lightbox urls={[view.media.url]} onClose={() => setView(null)} />
+        : <Lightbox urls={[]} video={{ src: view.media.video || '', poster: view.media.thumb, gif: view.media.type === 'gif' }} onClose={() => setView(null)} />)}
+    </>
+  );
+}
+
+function NoteCard({ f, n, open, label }: { f: Folder; n: Note; open: () => void; label?: string }) {
+  const d = useDrop((x) => memo.addSource(f.id, n.id, x.src));
   return (
     <button className={'mx-note' + (d.over ? ' over' : '')} onClick={open} {...d.props}>
       <b className="clamp2">{n.title || '無題のメモ'}</b>
       {n.body && <span className="mx-nb">{n.body}</span>}
       <span className="mx-nf">
+        {label && <span className="mx-mini" title={label}><Icon n="folder" s={14} /><span className="ell">{label}</span></span>}
         {n.place && <span className="mx-mini" title={n.place}><Icon n="location_on" s={14} /><span className="ell">{n.place}</span></span>}
         {!!n.sources.length && <span className="mx-mini"><Icon n="link" s={14} />{n.sources.length}</span>}
       </span>
@@ -98,7 +141,7 @@ function NoteEditor({ f, n, back }: { f: Folder; n: Note; back: () => void }) {
   const [placeIn, setPlaceIn] = useState<string | null>(null);
   const [del, setDel] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
-  const d = useDrop((s) => memo.addSource(f.id, n.id, s));
+  const d = useDrop((x) => memo.addSource(f.id, n.id, x.src));
   useEffect(() => { setTitle(n.title); setBody(n.body); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [n.id]);
   useEffect(() => { const el = ta.current; if (el) { el.style.height = 'auto'; el.style.height = Math.max(el.scrollHeight, 120) + 'px'; } }, [body]);
 
@@ -164,9 +207,12 @@ export function MemoExplorer({ page }: { page?: boolean }) {
   const [adding, setAdding] = useState(false);
   const f = st.folders.find((x) => x.id === fid);
   const n = f?.notes.find((x) => x.id === nid);
+  useEffect(() => { ensureKeep(); }, []);
   useEffect(() => { if (fid && !f) { setFid(null); setNid(null); } else if (nid && !n) setNid(null); }, [fid, nid, f, n]);
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => { body.current?.scrollTo(0, 0); }, [fid, nid]);
+  const fd = useDrop((x) => f && memo.addItem(x, f.id));
+  const all = page && !f ? st.folders.flatMap((x) => x.notes.map((nn) => ({ f: x, n: nn }))).sort((a, b) => b.n.updated - a.n.updated) : [];
 
   return (
     <section className={'memo-x' + (page ? ' page' : '')} aria-label="メモ">
@@ -178,22 +224,32 @@ export function MemoExplorer({ page }: { page?: boolean }) {
           {n && <><Icon n="chevron_right" s={18} /><span className="ell cur">{n.title || '無題のメモ'}</span></>}
         </nav>
       </div>
-      <div className="mx-scroll" ref={body}>
+      <div className={'mx-scroll' + (f && !n && fd.over ? ' over' : '')} ref={body} {...(f && !n ? fd.props : {})}>
         {!f && <>
           <div className="mx-tool">
             <button className="btn tonal sm" onClick={() => setAdding(true)}><Icon n="create_new_folder" />新しいフォルダ</button>
           </div>
           {adding && <div className="mx-row"><Icon n="folder" /><NameInput init="" ph="フォルダ名を入力" onDone={(v) => { if (v) memo.addFolder(v); setAdding(false); }} /></div>}
           {st.folders.map((x) => <FolderRow key={x.id} f={x} open={() => { setFid(x.id); setNid(null); }} />)}
-          {!st.folders.length && !adding && <div className="mx-empty"><Icon n="folder_open" s={40} /><p>フォルダを作ってメモを整理しましょう</p></div>}
+          {st.folders.length < 2 && !adding && <div className="mx-empty"><Icon n="folder_open" s={40} /><p>フォルダを作ってメモを整理しましょう</p></div>}
+          {page && !!all.length && <>
+            <h3 className="mx-sec">すべてのメモ<span className="mx-count">{all.length}</span></h3>
+            <div className="mx-grid">{all.map(({ f: ff, n: nn }) => <NoteCard key={nn.id} f={ff} n={nn} label={ff.name} open={() => { setFid(ff.id); setNid(nn.id); }} />)}</div>
+          </>}
+          {page && st.folders[0]?.items?.length ? <>
+            <h3 className="mx-sec">Keep の最近の保存<button className="btn text sm" onClick={() => setFid(KEEP)}>すべて表示</button></h3>
+            <ItemGrid f={st.folders[0]} items={st.folders[0].items!.slice(0, 8)} compact />
+          </> : null}
         </>}
         {f && !n && <>
           <div className="mx-tool">
             <button className="btn filled sm" onClick={() => setNid(memo.addNote(f.id))}><Icon n="note_add" />メモを新規作成</button>
-            <span className="muted small">{f.notes.length}件</span>
+            <span className="muted small">{f.items?.length ? `保存 ${f.items.length}件 · ` : ''}メモ {f.notes.length}件</span>
           </div>
-          {f.notes.length ? <div className="mx-grid">{f.notes.map((x) => <NoteCard key={x.id} f={f} n={x} open={() => setNid(x.id)} />)}</div>
-            : <div className="mx-empty"><Icon n="sticky_note_2" s={40} /><p>まだメモがありません</p></div>}
+          {f.keep && !f.items?.length && <div className={'mx-dropzone' + (fd.over ? ' over' : '')}><Icon n="bookmarks" />ポスト全体や、ポスト内の画像・動画・GIF を<br />ここへドラッグして保存<br /><span className="small">（スマホは共有メニュー →「メモに追加」→ Keep）</span></div>}
+          <ItemGrid f={f} items={f.items || []} />
+          {f.notes.length ? <>{!!f.items?.length && <h3 className="mx-sec">メモ</h3>}<div className="mx-grid">{f.notes.map((x) => <NoteCard key={x.id} f={f} n={x} open={() => setNid(x.id)} />)}</div></>
+            : !f.keep && !f.items?.length && <div className="mx-empty"><Icon n="sticky_note_2" s={40} /><p>まだメモがありません</p></div>}
         </>}
         {f && n && <NoteEditor f={f} n={n} back={() => setNid(null)} />}
       </div>
@@ -202,18 +258,13 @@ export function MemoExplorer({ page }: { page?: boolean }) {
 }
 
 /** Non-drag fallback: pick folder + note for a post (touch devices). */
-export function MemoPicker() {
+export default function MemoPicker({ src, onClose }: { src: Src; onClose: () => void }) {
   const st = useMemo2();
-  const [src, setSrc] = useState<Src | null>(null);
   const [fid, setFid] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  useEffect(() => {
-    const on = (e: any) => { setSrc(e.detail); setFid(null); setAdding(false); };
-    window.addEventListener('m3x-memo-pick', on); return () => window.removeEventListener('m3x-memo-pick', on);
-  }, []);
-  if (!src) return null;
+  useEffect(() => { ensureKeep(); }, []);
   const f = st.folders.find((x) => x.id === fid);
-  const close = () => setSrc(null);
+  const close = onClose;
   const add = (noteId: string) => { memo.addSource(f!.id, noteId, src); close(); };
   return (
     <div className="dialog-scrim" onClick={close}>
@@ -225,7 +276,9 @@ export function MemoPicker() {
         <p className="muted small clamp2" style={{ margin: '4px 0 12px' }}>@{src.handle}: {src.text}</p>
         <div className="mx-pick-list">
           {!f && <>
-            {st.folders.map((x) => <button key={x.id} className="mx-row mx-open sl" onClick={() => setFid(x.id)}><Icon n="folder" fill /><span className="ell">{x.name}</span><span className="mx-count">{x.notes.length}</span><Icon n="chevron_right" /></button>)}
+            {st.folders.map((x) => x.keep
+              ? <button key={x.id} className="mx-row mx-open sl" onClick={() => { memo.addItem({ src }, KEEP); close(); }}><Icon n="bookmarks" fill /><span className="ell"><b>Keep に保存</b></span><Icon n="add" /></button>
+              : <button key={x.id} className="mx-row mx-open sl" onClick={() => setFid(x.id)}><Icon n="folder" fill /><span className="ell">{x.name}</span><span className="mx-count">{x.notes.length}</span><Icon n="chevron_right" /></button>)}
             {adding ? <div className="mx-row"><Icon n="folder" /><NameInput init="" ph="フォルダ名を入力" onDone={(v) => { if (v) setFid(memo.addFolder(v)); setAdding(false); }} /></div>
               : <button className="btn tonal sm" style={{ margin: 8 }} onClick={() => setAdding(true)}><Icon n="create_new_folder" />新しいフォルダ</button>}
           </>}

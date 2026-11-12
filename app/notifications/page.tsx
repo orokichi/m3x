@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Avatar, Feed, Header, Icon, RichText } from '@/components/ui';
+import { Avatar, Feed, Header, RichText } from '@/components/ui';
 import { fmtTime } from '@/lib/api';
 import type { XNotif } from '@/lib/types';
 

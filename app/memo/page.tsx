@@ -1,16 +1,19 @@
 'use client';
-import Link from 'next/link';
-import { Header, Icon } from '@/components/ui';
-import { MemoExplorer } from '@/components/Memo';
-import { useMemoOn } from '@/lib/memo';
+import dynamic from 'next/dynamic';
+import { useEffect, useState } from 'react';
+import { Header, Spinner } from '@/components/ui';
 
+const MemoExplorer = dynamic(() => import('@/components/Memo').then((m) => m.MemoExplorer), { ssr: false, loading: () => <Spinner /> });
+const SidePanel = dynamic(() => import('@/components/SidePanel'), { ssr: false, loading: () => <Spinner /> });
+
+/** Full page: browse/review all folders, Keep and notes. Narrow screens also get the Agent page (swipe). */
 export default function MemoPage() {
-  const on = useMemoOn();
+  const [wide, setWide] = useState<boolean | null>(null);
+  useEffect(() => { const mq = window.matchMedia('(min-width: 1061px)'); const f = () => setWide(mq.matches); f(); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f); }, []);
   return (
     <>
       <Header title="メモ" back={false} />
-      {on ? <div className="memo-page"><MemoExplorer page /></div>
-        : <div className="empty"><Icon n="sticky_note_2" s={48} /><h2>メモ機能はオフです</h2><p>設定で「メモ機能」をオンにすると使えます。</p><Link className="btn filled" href="/settings#memo">設定を開く</Link></div>}
+      {wide === null ? null : wide ? <div className="memo-page"><MemoExplorer page /></div> : <div className="memo-page"><SidePanel page /></div>}
     </>
   );
 }

@@ -6,6 +6,7 @@ import { Avatar, Header, Icon } from '@/components/ui';
 import type { XUser } from '@/lib/types';
 import { getGroqKey, setGroqKey, groq } from '@/lib/ai';
 import { useMemoOn, setMemoOn } from '@/lib/memo';
+import { PRESETS, useSeedPref, setSeedPref } from '@/lib/themeStore';
 
 function AiSettings() {
   const [k, setK] = useState('');
@@ -21,7 +22,7 @@ function AiSettings() {
   return (
     <section className="scard" id="ai">
       <h2><span className="ms" style={{ verticalAlign: '-5px', marginRight: 6 }}>auto_awesome</span>AI（Groq Console API キー）</h2>
-      <p className="muted small" style={{ marginTop: 0 }}>登録すると左メニューに「Super Search」が出て、フォロー画面で AI 要約が使えます。キーはこの端末（localStorage）にだけ保存され、リクエストごとに送られるだけでサーバーには保存・記録されません。</p>
+      <p className="muted small" style={{ marginTop: 0 }}>登録すると「Super Search」、フォロー画面の AI 要約、メモの「M3X Agent」が使えます。キーはこの端末（localStorage）にだけ保存され、リクエストごとに送られるだけでサーバーには保存・記録されません。</p>
       <ol className="steps small">
         <li><a className="lnk" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">console.groq.com/keys</a> を開いてログイン（無料）</li>
         <li>「Create API Key」→ 名前を付けて作成し、<code>gsk_</code> で始まるキーをコピー</li>
@@ -39,12 +40,44 @@ function AiSettings() {
   );
 }
 
+function ThemeSettings() {
+  const pref = useSeedPref();
+  const custom = pref !== 'system' && !PRESETS.some(([c]) => c === pref);
+  return (
+    <section className="scard" id="theme">
+      <h2><span className="ms" style={{ verticalAlign: '-5px', marginRight: 6 }}>palette</span>テーマカラー</h2>
+      <p className="muted small" style={{ marginTop: 0 }}>選んだ色からダイナミックカラー（Material 3）の配色を作ります。ライト／ダークは端末の設定に合わせます。</p>
+      <div className="seeds" role="radiogroup" aria-label="テーマカラー">
+        <button role="radio" aria-checked={pref === 'system'} className={'seed sys' + (pref === 'system' ? ' on' : '')} onClick={() => setSeedPref('system')} title="システム（端末のアクセントカラー）">
+          <Icon n="brightness_auto" /><span>システム</span>
+        </button>
+        {PRESETS.map(([c, n]) => (
+          <button key={c} role="radio" aria-checked={pref === c} className={'seed' + (pref === c ? ' on' : '')} style={{ ['--c' as any]: c }} onClick={() => setSeedPref(c)} title={n} aria-label={n}>
+            {pref === c && <Icon n="check" s={20} />}
+          </button>
+        ))}
+        <label className={'seed pick' + (custom ? ' on' : '')} title="カスタム" style={custom ? { ['--c' as any]: pref } : undefined}>
+          <Icon n={custom ? 'check' : 'colorize'} s={20} />
+          <input type="color" value={custom ? pref : '#1d9bf0'} onChange={(e) => setSeedPref(e.target.value)} aria-label="カスタムカラー" />
+        </label>
+      </div>
+      <div className="swatches" aria-hidden>
+        <span style={{ background: 'var(--md-primary)', color: 'var(--md-on-primary)' }}>Primary</span>
+        <span style={{ background: 'var(--md-secondary-container)', color: 'var(--md-on-secondary-container)' }}>Secondary</span>
+        <span style={{ background: 'var(--md-tertiary-container)', color: 'var(--md-on-tertiary-container)' }}>付箋</span>
+        <span style={{ background: 'var(--md-surface-container-highest)', color: 'var(--md-on-surface)' }}>Surface</span>
+      </div>
+      <p className="muted small" style={{ marginBottom: 0 }}>「システム」は端末のアクセントカラーを使います（ブラウザが対応していない場合はブルー）。</p>
+    </section>
+  );
+}
+
 function MemoSettings() {
   const on = useMemoOn();
   return (
     <section className="scard" id="memo">
       <label className="sw-row">
-        <div><h2 style={{ margin: 0 }}>メモ機能</h2><p className="muted small" style={{ margin: '4px 0 0' }}>右サイドバーの「日本のトレンド」をメモ（フォルダ・付箋）に置き換えます。ポストをドラッグしてメモに参照として追加できます。スマホではメニューの「メモ」から開けます。データはこの端末にだけ保存されます。</p></div>
+        <div><h2 style={{ margin: 0 }}>メモ機能</h2><p className="muted small" style={{ margin: '4px 0 0' }}>右サイドバーの「日本のトレンド」を「メモ ／ M3X Agent」パネルに置き換え、ポストや画像をドラッグして Keep・メモ・Agent に追加できるようにします。メモ画面は左メニューの「メモ」からいつでも開けます。データはこの端末にだけ保存されます。</p></div>
         <input type="checkbox" className="switch" role="switch" checked={on} onChange={(e) => setMemoOn(e.target.checked)} aria-label="メモ機能" />
       </label>
     </section>
@@ -105,6 +138,7 @@ export default function Settings() {
           {st.err && <p className="c-err">{st.err}</p>}
         </section>
 
+        <ThemeSettings />
         <AiSettings />
         <MemoSettings />
 

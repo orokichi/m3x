@@ -28,7 +28,7 @@ export default function Status({ params }: { params: Promise<{ id: string }> }) 
             {me?.id !== t.user.id && <FollowBtn u={t.user} />}
           </div>
           {t.text && <div className="tw-text xl"><RichText t={t} /></div>}
-          <MediaGrid media={t.media} />
+          <MediaGrid media={t.media} t={t} />
           {t.quoted && <TweetCard t={t.quoted} />}
           <div className="muted meta-line">{fmtFull(t.createdAt)}{t.views != null && <> · <b className="c-on">{fmtNum(t.views)}</b> 件の表示</>}</div>
           <div className="stats">
