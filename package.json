@@ -23,5 +23,8 @@
   "private": true,
   "engines": {
     "node": "22.x"
+  },
+  "overrides": {
+    "css-select": "^5.1.0"
   }
 }
