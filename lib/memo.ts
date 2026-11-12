@@ -114,16 +114,26 @@ export const pickMemo = (s: Src) => window.dispatchEvent(new CustomEvent('m3x-me
 /* ---------- M3X Agent context posts (persisted so mobile "add" works before the panel mounts) ---------- */
 export const MAX_CTX = 7;
 const AK = 'm3x.agentCtx', AEV = 'm3x-agentctx';
-let ctxRaw: string | null | undefined, ctxCache: Src[] = [];
+let ctxCache: Src[] = [];
+let ctxDirty = true; // cache may lag localStorage (first read, or a write from another tab)
 const NO_CTX: Src[] = [];
+if (typeof window !== 'undefined') window.addEventListener('storage', (e) => { if (e.key === AK || e.key === null) ctxDirty = true; });
 export function getCtx(): Src[] {
   if (typeof window === 'undefined') return NO_CTX;
-  const raw = localStorage.getItem(AK);
-  if (raw !== ctxRaw) { ctxRaw = raw; try { const v = JSON.parse(raw || '[]'); ctxCache = Array.isArray(v) ? v : []; } catch { ctxCache = []; } }
+  if (ctxDirty) {
+    ctxDirty = false;
+    try { const v = JSON.parse(localStorage.getItem(AK) || '[]'); ctxCache = Array.isArray(v) ? v : []; } catch { ctxCache = []; }
+  }
   return ctxCache;
 }
 export const useCtx = () => useLocal(AEV, getCtx, NO_CTX);
-function saveCtx(v: Src[]) { try { localStorage.setItem(AK, JSON.stringify(v)); } catch {} window.dispatchEvent(new Event(AEV)); }
+/** Write-through save: the in-memory cache is replaced BEFORE persisting, so
+    getCtx() can never hand out pre-delete data once a delete has returned. */
+function saveCtx(v: Src[]) {
+  ctxCache = v; ctxDirty = false;
+  try { localStorage.setItem(AK, JSON.stringify(v)); } catch {}
+  window.dispatchEvent(new Event(AEV));
+}
 /** Add a context post: dedupes and enforces the 7-post limit with a toast. */
 export function addCtx(s: Src, quiet = false) {
   const c = getCtx();
@@ -132,4 +142,10 @@ export function addCtx(s: Src, quiet = false) {
   saveCtx([...c, s]); if (!quiet) toast(`M3X Agent に追加しました（${c.length + 1}/${MAX_CTX}）`); return true;
 }
 export const delCtx = (id: string) => saveCtx(getCtx().filter((x) => x.id !== id));
-export const clearCtx = () => saveCtx([]);
+/** Remove ALL context posts: drop the persisted key entirely (not just an
+    empty array) and reset the cache, so nothing of the old context remains. */
+export const clearCtx = () => {
+  ctxCache = []; ctxDirty = false;
+  try { localStorage.removeItem(AK); } catch {}
+  window.dispatchEvent(new Event(AEV));
+};

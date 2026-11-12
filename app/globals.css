@@ -518,6 +518,7 @@ a.cite:hover { border-radius: 5px; text-decoration: none; }
 .ag-msg.err { background: var(--md-error-container); color: var(--md-on-error-container); }
 .ag-msg .ai-text { font-size: 14px; line-height: 1.6; }
 .ag-think { display: inline-flex; align-items: center; gap: 8px; color: var(--md-on-surface-variant); }
+.ag-note { align-self: center; max-width: 92%; padding: 5px 14px; border-radius: var(--r-full); background: var(--md-surface-container-highest); color: var(--md-on-surface-variant); font: var(--t-label-m); text-align: center; animation: rise .4s var(--spring); }
 .ag-run { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; padding: 4px; border-radius: var(--r-l); background: var(--md-surface); }
 .ag-step { display: flex; align-items: center; gap: 8px; min-height: 36px; min-width: 0; padding: 4px 8px; border-radius: var(--r-m); font: var(--t-body-m); transition: background .3s var(--emph), opacity .3s; }
 .ag-step.wait { opacity: .45; }

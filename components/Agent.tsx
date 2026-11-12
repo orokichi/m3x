@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { img } from '@/lib/api';
 import { groq, parseJson, useGroq, type Msg } from '@/lib/ai';
-import { memo, getMemo, useCtx, addCtx, delCtx, clearCtx, snapshot, undo, clearUndo, KEEP, MAX_CTX, MAX_SRC, type Src, type Item } from '@/lib/memo';
+import { memo, getMemo, useCtx, getCtx, addCtx, delCtx, clearCtx, snapshot, undo, clearUndo, KEEP, MAX_CTX, MAX_SRC, type Src, type Item } from '@/lib/memo';
 import { AiText } from './AiText';
 import AgentIcon from './AgentIcon';
 import { Icon, Loader } from './ui';
@@ -12,7 +12,7 @@ import { useDrop } from './Memo';
 type StepState = 'wait' | 'run' | 'done' | 'skip';
 interface Step { id: string; icon: string; run: string; done: string; state: StepState; thumbs?: string[]; exec: () => boolean | void }
 interface Run { status: 'running' | 'done' | 'undone'; steps: Omit<Step, 'exec'>[]; summary?: string }
-interface M { id: string; role: 'user' | 'assistant'; text?: string; run?: Run; pending?: boolean; err?: boolean }
+interface M { id: string; role: 'user' | 'assistant'; text?: string; run?: Run; pending?: boolean; err?: boolean; note?: boolean }
 
 const SYS = `あなたはXクライアント「M3X」のメモ整理エージェント。必ず次のJSONだけを返す:
 {"reply":"日本語の短い返答(最大4行)","actions":[]}
@@ -53,6 +53,25 @@ export default function Agent({ active }: { active: boolean }) {
   const ta = useRef<HTMLTextAreaElement>(null);
   const d = useDrop((x) => addCtx(x.src));
 
+  /* --- deleted-context isolation -------------------------------------------
+     Past replies were generated FROM the context posts, so the plain chat
+     history leaks deleted context data into later answers. When any context
+     post is removed, cut the API history at that point: messages before the
+     cut are displayed but never sent to the model again. */
+  const msgsRef = useRef<M[]>([]);
+  msgsRef.current = msgs;
+  const [histFrom, setHistFrom] = useState(0);
+  const prevCtxIds = useRef<string[] | null>(null);
+  useEffect(() => {
+    const ids = ctx.map((s) => s.id);
+    const prev = prevCtxIds.current;
+    prevCtxIds.current = ids;
+    if (prev && prev.some((id) => !ids.includes(id))) {
+      setHistFrom(msgsRef.current.length);
+      setMsgs((ms) => [...ms, { id: uid(), role: 'assistant', note: true, text: 'コンテキストが削除されたため、それ以前の会話は今後の回答に使われません' }]);
+    }
+  }, [ctx]);
+
   useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' }); }, [msgs]);
   useEffect(() => { const el = ta.current; if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px'; } }, [q]);
   useEffect(() => { clearUndo(); }, []);
@@ -64,10 +83,12 @@ export default function Agent({ active }: { active: boolean }) {
     const t = text.trim(); if (!t || busy) return;
     setQ(''); setBusy(true);
     const uidU = uid(), aid = uid();
-    const hist: Msg[] = msgs.filter((m) => m.text && !m.err).slice(-4).map((m) => ({ role: m.role, content: cut(m.text!, 300) }));
+    const hist: Msg[] = msgs.slice(histFrom).filter((m) => m.text && !m.err && !m.note).slice(-4).map((m) => ({ role: m.role, content: cut(m.text!, 300) }));
     setMsgs((ms) => [...ms, { id: uidU, role: 'user', text: t }, { id: aid, role: 'assistant', pending: true }]);
     const keep = getMemo().folders.find((f) => f.id === KEEP)?.items || [];
-    const ctxNow = ctx.slice();
+    /* Read the context store fresh at send time (never a render snapshot),
+       so a deletion that just happened is always honoured. */
+    const ctxNow = getCtx();
     try {
       const out = await groq([{ role: 'system', content: SYS }, ...hist, { role: 'user', content: `${buildContext(keep, ctxNow)}\n[依頼] ${t}` }], { tier: 'small', json: true, max: 650, temperature: 0.2 });
       const j = parseJson<{ reply?: string; actions?: any[] }>(out);
@@ -160,7 +181,9 @@ export default function Agent({ active }: { active: boolean }) {
             <div className="ag-quick">{QUICK.map(([ic, t]) => <button key={t} className="chip sl" onClick={() => send(t)} disabled={busy}><Icon n={ic} s={18} />{t}</button>)}</div>
           </div>
         )}
-        {msgs.map((m) => (
+        {msgs.map((m) => m.note ? (
+          <div key={m.id} className="ag-note"><span>{m.text}</span></div>
+        ) : (
           <div key={m.id} className={'ag-msg ' + m.role + (m.err ? ' err' : '')}>
             {m.pending ? <span className="ag-think"><Loader s={26} />考え中…</span>
               : m.role === 'assistant' ? <AiText text={m.text || ''} /> : m.text}
