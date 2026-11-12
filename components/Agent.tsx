@@ -8,14 +8,12 @@ import { AiText } from './AiText';
 import AgentIcon from './AgentIcon';
 import { Icon, Loader } from './ui';
 import { useDrop } from './Memo';
-import { collectScreen, execAction, mouseOff, type UiAction } from '@/lib/uiactions';
+import { collectScreen, execAction, mouseOff, useAct, getAct, setAct, resetAct, type UiAction, type ActStep } from '@/lib/uiactions';
 
 type StepState = 'wait' | 'run' | 'done' | 'skip';
 interface Step { id: string; icon: string; run: string; done: string; state: StepState; thumbs?: string[]; exec: () => boolean | void }
 interface Run { status: 'running' | 'done' | 'undone'; steps: Omit<Step, 'exec'>[]; summary?: string }
-interface ActStep { id: string; icon: string; label: string; state: StepState }
-interface ActRun { status: 'running' | 'done'; steps: ActStep[]; summary?: string }
-interface M { id: string; role: 'user' | 'assistant'; text?: string; run?: Run; act?: ActRun; question?: { q: string; options: string[]; answered?: boolean }; pending?: boolean; err?: boolean; note?: boolean }
+interface M { id: string; role: 'user' | 'assistant'; text?: string; run?: Run; pending?: boolean; err?: boolean; note?: boolean }
 
 const SYS = `あなたはXクライアント「M3X」のメモ整理エージェント。必ず次のJSONだけを返す:
 {"reply":"日本語の短い返答(最大4行)","actions":[]}
@@ -98,11 +96,16 @@ export default function Agent({ active }: { active: boolean }) {
      When on (or while a question is pending), send() plans structured UI
      actions, the executor in lib/uiactions runs them with the M3X Mouse,
      and the loop re-plans against the new screen until the AI reports
-     done or asks the user a question. */
+     done or asks the user a question.
+     The run itself lives in the module-level store in lib/uiactions:
+     on narrow screens this component is hosted by the /memo page, so a
+     run that navigates away unmounts the Agent — the store (and the
+     orphaned loop writing to it) survives, and a remounted Agent shows
+     the same run and its pending question again. */
   const [actMode, setActMode] = useState(false);
-  const actRef = useRef<{ goal: string; log: string[] } | null>(null);
+  const act = useAct();
+  const actBusy = act.status === 'running';
   const labelRef = useRef(new Map<string, string>());
-  const qMsgRef = useRef<string | null>(null);
 
   function validateActs(raw: any): UiAction[] {
     if (!Array.isArray(raw)) return [];
@@ -135,63 +138,61 @@ export default function Agent({ active }: { active: boolean }) {
   };
 
   async function sendAct(text: string) {
-    const t = text.trim(); if (!t || busy) return;
+    const t = text.trim(); if (!t) return;
+    if (getAct().status === 'running') return; /* a run is already going (maybe in an unmounted instance) */
     setQ(''); setBusy(true);
-    let flow = actRef.current;
-    if (!flow) { flow = { goal: t, log: [] }; actRef.current = flow; }
-    else {
-      flow.log.push(`ユーザーの回答: ${t}`);
-      if (qMsgRef.current) { const qid = qMsgRef.current; qMsgRef.current = null; patch(qid, (m) => (m.question ? { ...m, question: { ...m.question, answered: true } } : m)); }
+    const resuming = getAct().status === 'waiting' && !!getAct().goal;
+    if (resuming) {
+      setAct({ status: 'running', question: null, summary: '', log: [...getAct().log, `ユーザーの回答: ${t}`] });
+    } else {
+      resetAct();
+      setAct({ status: 'running', goal: t, log: [], steps: [] });
     }
-    const uidU = uid(), aid = uid();
-    setMsgs((ms) => [...ms, { id: uidU, role: 'user', text: t }, { id: aid, role: 'assistant', pending: true }]);
-    const stepsUi: ActStep[] = [];
-    const syncSteps = (status: 'running' | 'done', summary?: string) =>
-      patch(aid, (m) => ({ ...m, pending: false, act: stepsUi.length ? { status, steps: [...stepsUi], summary } : m.act }));
+    setMsgs((ms) => [...ms, { id: uid(), role: 'user', text: t }]);
+    const stepsUi: ActStep[] = [...getAct().steps];
+    const syncSteps = () => setAct({ steps: [...stepsUi] });
     try {
       let rounds = 0; let finished = false;
       while (rounds++ < 5 && !finished) {
+        const flow = getAct();
         const screen = collectScreen();
         labelRef.current = new Map(screen.els.map((e) => [e.id, e.label]));
         const prompt = `[現在の画面] パス: ${screen.path}\n[操作可能要素（ID : 内容）]\n${screen.els.map((e) => `${e.id} : ${e.label}`).join('\n') || 'なし'}\n[目的] ${flow.goal}\n[これまでの経過]\n${flow.log.join('\n') || 'なし'}`;
         const out = await groq([{ role: 'system', content: SYS_ACT }, { role: 'user', content: prompt }], { tier: 'large', json: true, max: 900, temperature: 0.2 });
         const j = parseJson<{ reply?: string; steps?: any[]; done?: boolean }>(out);
         if (!j) throw new Error('AIの応答を解釈できませんでした');
-        if (rounds === 1) patch(aid, (m) => ({ ...m, pending: false, text: String(j.reply || '').slice(0, 400) || m.text }));
-        patch(aid, (m) => ({ ...m, pending: false }));
+        if (rounds === 1) setAct({ reply: String(j.reply || '').slice(0, 400) });
         const acts = validateActs(j.steps);
         let asked: Extract<UiAction, { type: 'askUser' }> | null = null;
+        let executed = 0;
         for (const a of acts) {
           const meta = actLabel(a);
           const st: ActStep = { id: uid(), ...meta, state: 'wait' };
-          stepsUi.push(st); syncSteps('running');
-          if (a.type === 'askUser') { asked = a; st.state = 'done'; syncSteps('running'); flow.log.push(`質問: ${a.question}`); break; }
-          st.state = 'run'; syncSteps('running');
+          stepsUi.push(st); syncSteps();
+          if (a.type === 'askUser') { asked = a; st.state = 'done'; syncSteps(); setAct({ log: [...getAct().log, `質問: ${a.question}`] }); break; }
+          st.state = 'run'; syncSteps();
           const r = await execAction(a);
-          st.state = r === 'ok' ? 'done' : 'skip';
-          syncSteps('running');
-          flow.log.push(`実行: ${meta.label} → ${r === 'ok' ? '成功' : 'スキップ（対象が見つからず）'}`);
+          st.state = r === 'ok' ? 'done' : 'skip'; if (r === 'ok') executed++;
+          syncSteps();
+          setAct({ log: [...getAct().log, `実行: ${meta.label} → ${r === 'ok' ? '成功' : 'スキップ（対象が見つからず）'}`] });
         }
         if (asked) {
-          syncSteps('done', '質問に答えると続きを実行します');
-          const qid = uid(); qMsgRef.current = qid;
-          setMsgs((ms) => [...ms, { id: qid, role: 'assistant', text: asked!.question, question: { q: asked!.question, options: asked!.options || [] } }]);
-          return; /* wait for the user's answer; actRef keeps the flow alive */
+          setAct({ status: 'waiting', question: { q: asked.question, options: asked.options || [] } });
+          return; /* wait for the user's answer; the store keeps the flow alive */
         }
-        if (j.done || !acts.length) { syncSteps('done', stepsUi.length ? '完了しました' : undefined); finished = true; }
+        if (j.done || !acts.length) { setAct({ status: 'done', summary: stepsUi.length ? '完了しました' : '' }); finished = true; }
+        else if (!executed) { setAct({ status: 'done', summary: '対象の要素が見つからず、実行できませんでした' }); finished = true; }
         /* otherwise loop: re-plan against the new screen */
       }
-      if (!finished) syncSteps('done', 'ステップ数の上限に達したため終了しました');
-      actRef.current = null;
+      if (!finished) setAct({ status: 'done', summary: 'ステップ数の上限に達したため終了しました' });
     } catch (e: any) {
-      patch(aid, (m) => ({ ...m, pending: false, err: true, text: e.message || 'エラーが発生しました' }));
-      actRef.current = null;
+      setAct({ status: 'error', error: e.message || 'エラーが発生しました' });
     } finally { setBusy(false); mouseOff(); }
   }
 
   async function send(text: string) {
-    if (actMode || actRef.current) return sendAct(text);
-    const t = text.trim(); if (!t || busy) return;
+    if (actMode || getAct().status === 'waiting') return sendAct(text);
+    const t = text.trim(); if (!t || busy || actBusy) return;
     setQ(''); setBusy(true);
     const uidU = uid(), aid = uid();
     const hist: Msg[] = msgs.slice(histFrom).filter((m) => m.text && !m.err && !m.note).slice(-4).map((m) => ({ role: m.role, content: cut(m.text!, 300) }));
@@ -299,19 +300,27 @@ export default function Agent({ active }: { active: boolean }) {
             {m.pending ? <span className="ag-think"><Loader s={26} />考え中…</span>
               : m.role === 'assistant' ? <AiText text={m.text || ''} /> : m.text}
             {m.run && <RunCard run={m.run} canUndo={lastRun === m.id && m.run.status === 'done'} onUndo={() => doUndo(m.id)} />}
-            {m.act && <ActCard run={m.act} />}
-            {m.question && (
-              <div className="ag-q">
-                <div className="ag-q-h"><Icon n="help" s={18} />Agent からの質問です</div>
-                {!!m.question.options.length && <div className="ag-q-opts">{m.question.options.map((o) => (
-                  <button key={o} className="chip sl" disabled={m.question!.answered || busy} onClick={() => sendAct(o)}>{o}</button>
-                ))}</div>}
-                {!m.question.answered && <p className="muted small" style={{ margin: 0 }}>選択肢をタップするか、下の入力欄から自由に返信してください</p>}
-              </div>
-            )}
           </div>
         ))}
       </div>
+      {act.status !== 'idle' && (
+        <div className="ag-live">
+          {act.reply && <p className="ag-live-reply">{act.reply}</p>}
+          {!!act.steps.length && <ActCard run={{ status: act.status === 'done' ? 'done' : 'running', steps: act.steps, summary: act.status === 'done' ? act.summary : undefined }} />}
+          {act.status === 'error' && <div className="ag-live-err"><Icon n="error" s={18} /><span>{act.error}</span></div>}
+          {act.status === 'waiting' && act.question && (
+            <div className="ag-q">
+              <div className="ag-q-h"><Icon n="help" s={18} />Agent からの質問です</div>
+              <p style={{ margin: 0 }}>{act.question.q}</p>
+              {!!act.question.options.length && <div className="ag-q-opts">{act.question.options.map((o) => (
+                <button key={o} className="chip sl" onClick={() => sendAct(o)}>{o}</button>
+              ))}</div>}
+              <p className="muted small" style={{ margin: 0 }}>選択肢をタップするか、下の入力欄から自由に返信してください</p>
+            </div>
+          )}
+          {act.status !== 'running' && <button className="icon-btn sm ag-live-x" onClick={() => resetAct()} aria-label="閉じる"><Icon n="close" s={18} /></button>}
+        </div>
+      )}
       <div className="ag-dock">
         <div className={'ag-ctx' + (d.over ? ' over' : '')}>
           <span className={'mx-count' + (ctx.length >= MAX_CTX ? ' full' : '')} title="コンテキストのポスト">{ctx.length}/{MAX_CTX}</span>
@@ -332,7 +341,7 @@ export default function Agent({ active }: { active: boolean }) {
           </button>
           <textarea ref={ta} rows={1} value={q} onChange={(e) => setQ(e.target.value)} placeholder={actMode ? 'Actions：やりたいことを入力（例：最新のポストを Keep に入れて）' : 'Agent に頼む…（例: Keep を整理して）'} aria-label="メッセージ"
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(q); } }} tabIndex={active ? 0 : -1} />
-          <button className={'ag-send' + (busy ? ' busy' : '')} type="submit" disabled={busy || !q.trim()} aria-label="送信">{busy ? <Loader s={22} /> : <Icon n="arrow_upward" />}</button>
+          <button className={'ag-send' + (busy || actBusy ? ' busy' : '')} type="submit" disabled={busy || actBusy || !q.trim()} aria-label="送信">{busy || actBusy ? <Loader s={22} /> : <Icon n="arrow_upward" />}</button>
         </form>
       </div>
       {d.over && <div className="ag-drop"><Icon n="add_link" s={28} />コンテキストに追加</div>}
@@ -365,8 +374,10 @@ function RunCard({ run, canUndo, onUndo }: { run: Run; canUndo: boolean; onUndo:
   );
 }
 
-/** Live step list for an Actions (screen operation) run. */
-function ActCard({ run }: { run: ActRun }) {
+/** Live step list for an Actions (screen operation) run. Rendered from the
+    module-level act store, so it survives the Agent being unmounted by
+    navigation and reappears when the user comes back. */
+function ActCard({ run }: { run: { status: 'running' | 'done'; steps: ActStep[]; summary?: string } }) {
   return (
     <div className={'ag-run ' + run.status}>
       {run.steps.map((s) => (

@@ -47,6 +47,10 @@ export function mouseOff(delay = 1100) {
 }
 
 async function moveTo(x: number, y: number, label: string, minDur = 0) {
+  if (!mouse.on) { // first appearance: start from screen centre, not the corner
+    setMouse({ x: window.innerWidth / 2, y: window.innerHeight / 2, dur: 0, label: '' });
+    await sleep(40);
+  }
   const dx = x - mouse.x, dy = y - mouse.y;
   const dist = Math.hypot(dx, dy);
   const dur = Math.max(minDur, Math.min(950, 240 + dist * 0.45));
@@ -68,6 +72,42 @@ function ring(el: Element) {
   d.style.width = `${r.width + 10}px`; d.style.height = `${r.height + 10}px`;
   document.body.appendChild(d);
   setTimeout(() => d.remove(), 1000);
+}
+
+/* ---------------- Actions run store ----------------
+   The whole run (flow, steps, pending question) lives at module level,
+   NOT in the Agent component: on narrow screens the Agent is hosted by
+   the /memo page, so a run that navigates away unmounts the Agent.
+   Keeping the run here lets the executor loop keep writing progress,
+   and a remounted Agent picks the same run (and its pending question)
+   back up instead of the run silently dying with the component. */
+export type ActStepState = 'wait' | 'run' | 'done' | 'skip';
+export interface ActStep { id: string; icon: string; label: string; state: ActStepState }
+export interface ActState {
+  status: 'idle' | 'running' | 'waiting' | 'done' | 'error';
+  goal: string; log: string[];
+  steps: ActStep[]; reply: string; summary: string; error: string;
+  question: { q: string; options: string[] } | null;
+}
+const ACT_IDLE: ActState = { status: 'idle', goal: '', log: [], steps: [], reply: '', summary: '', error: '', question: null };
+let act: ActState = ACT_IDLE;
+const AEV = 'm3x-act-run';
+export function setAct(p: Partial<ActState>) { act = { ...act, ...p }; window.dispatchEvent(new Event(AEV)); }
+export function resetAct() { act = ACT_IDLE; window.dispatchEvent(new Event(AEV)); }
+export const getAct = () => act;
+export const useAct = () => useSyncExternalStore(
+  (cb) => { window.addEventListener(AEV, cb); return () => window.removeEventListener(AEV, cb); },
+  () => act, () => ACT_IDLE,
+);
+
+/** Wait until the URL actually changes (route transition + first render). */
+async function waitPathChange(from: string, timeout = 2600): Promise<boolean> {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeout) {
+    if (location.pathname + location.search !== from) { await sleep(420); return true; }
+    await sleep(120);
+  }
+  return false;
 }
 
 /* ---------------- router registry (set by Shell) ---------------- */
@@ -148,6 +188,7 @@ export async function execAction(a: UiAction): Promise<ExecResult> {
       return 'ok';
     }
     case 'navigate': {
+      const from = location.pathname + location.search;
       const els = Array.from(document.querySelectorAll<HTMLElement>(`[data-action="nav"][data-path="${esc(a.path)}"]`));
       const el = els.find((e) => visible(e)) || els[0];
       if (el) {
@@ -158,7 +199,10 @@ export async function execAction(a: UiAction): Promise<ExecResult> {
         await moveTo(window.innerWidth * 0.5, 90, `${a.path} へ移動`);
         pushFn(a.path);
       } else return 'skip';
-      await sleep(1000); // let the new screen render
+      /* Wait for the route to actually change and settle — a fixed sleep
+         re-plans against the OLD screen on slow devices. */
+      if (a.path !== from) await waitPathChange(from); else await sleep(600);
+      await sleep(250);
       return 'ok';
     }
     case 'click': {
@@ -179,10 +223,12 @@ export async function execAction(a: UiAction): Promise<ExecResult> {
       setVal(el, a.text);
       await sleep(320);
       if (a.submit) {
+        const from = location.pathname + location.search;
         const form = el.closest('form');
         if (form) form.requestSubmit();
         else el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-        await sleep(1200);
+        await waitPathChange(from, 1400); // submits usually navigate (e.g. search)
+        await sleep(300);
       }
       return 'ok';
     }
