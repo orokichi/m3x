@@ -7,6 +7,7 @@ import { x, ApiError, fmtNum, fmtTime, toast, getCreds, isLocalFollow, setLocalF
 import type { XTweet, XUser, XMedia, Page } from '@/lib/types';
 import { MIME, MIME_MEDIA, snap, kmedia, pickMemo, useMemoOn, addCtx } from '@/lib/memo';
 import { useGroq } from '@/lib/ai';
+import AgentIcon from './AgentIcon';
 
 const Lightbox = dynamic(() => import('./Lightbox'), { ssr: false });
 
@@ -142,7 +143,7 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
           {smenu && <div className="menu r" role="menu" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setSmenu(false)}>
             <button role="menuitem" onClick={() => { setSmenu(false); share(); }}><Icon n="ios_share" />共有・リンクをコピー</button>
             <button role="menuitem" onClick={() => { setSmenu(false); pickMemo(snap(t)); }}><Icon n="sticky_note_2" />メモ・Keep に追加</button>
-            {groqOn && <button role="menuitem" onClick={() => { setSmenu(false); if (addCtx(snap(t))) window.dispatchEvent(new Event('m3x-open-agent')); }}><Icon n="smart_toy" />M3X Agent に追加</button>}
+            {groqOn && <button role="menuitem" onClick={() => { setSmenu(false); if (addCtx(snap(t))) window.dispatchEvent(new Event('m3x-open-agent')); }}><AgentIcon size={20} />M3X Agent に追加</button>}
           </div>}
         </div>
       </div>

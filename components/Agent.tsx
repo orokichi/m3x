@@ -5,6 +5,7 @@ import { img } from '@/lib/api';
 import { groq, parseJson, useGroq, type Msg } from '@/lib/ai';
 import { memo, getMemo, useCtx, addCtx, delCtx, clearCtx, snapshot, undo, clearUndo, KEEP, MAX_CTX, MAX_SRC, type Src, type Item } from '@/lib/memo';
 import { AiText } from './AiText';
+import AgentIcon from './AgentIcon';
 import { Icon, Loader } from './ui';
 import { useDrop } from './Memo';
 
@@ -140,7 +141,7 @@ export default function Agent({ active }: { active: boolean }) {
   if (!has) return (
     <div className="ag-wrap">
       <div className="ag-nokey">
-        <span className="ag-orb"><Icon n="smart_toy" s={32} fill /></span>
+        <span className="ag-orb"><AgentIcon size={36} /></span>
         <h3>M3X Agent</h3>
         <p className="muted small">Groq の API キーを設定すると、ポストをもとにメモを作ったり、Keep を自動で整理したりできます。</p>
         <Link className="btn filled" href="/settings#ai"><Icon n="key" />設定で API キーを登録</Link>
@@ -153,7 +154,7 @@ export default function Agent({ active }: { active: boolean }) {
       <div className="ag-list" ref={list}>
         {!msgs.length && (
           <div className="ag-hello">
-            <span className="ag-orb"><Icon n="smart_toy" s={30} fill /></span>
+            <span className="ag-orb"><AgentIcon size={34} /></span>
             <b>M3X Agent</b>
             <p className="muted small">ポストをここへドラッグしてコンテキストに追加（最大{MAX_CTX}件）。Keep の整理やメモ作成を頼めます。</p>
             <div className="ag-quick">{QUICK.map(([ic, t]) => <button key={t} className="chip sl" onClick={() => send(t)} disabled={busy}><Icon n={ic} s={18} />{t}</button>)}</div>

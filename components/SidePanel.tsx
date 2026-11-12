@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MemoExplorer } from './Memo';
 import Agent from './Agent';
+import AgentIcon from './AgentIcon';
 import { Icon } from './ui';
 
 const PK = 'm3x.panelPage', TK = 'm3x.tut.panel';
@@ -114,7 +115,7 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
   ];
   useEffect(() => { if (tut >= 0 && TUT[tut]) goTo(TUT[tut][3]); }, [tut]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (agentOnly) return <div className={'sp' + (pageMode ? ' page' : '')}><div className="sp-head solo"><span className="sp-title"><Icon n="smart_toy" fill />M3X Agent</span></div><div className="sp-view"><Agent active /></div></div>;
+  if (agentOnly) return <div className={'sp' + (pageMode ? ' page' : '')}><div className="sp-head solo"><span className="sp-title"><AgentIcon size={22} />M3X Agent</span></div><div className="sp-view"><Agent active /></div></div>;
 
   return (
     <div ref={wrap} className={'sp' + (pageMode ? ' page' : '')} style={{ ['--p' as any]: page }}
@@ -125,7 +126,7 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
           <i className="sp-ind" aria-hidden />
           {PAGES.map(([ic, l], i) => (
             <button key={l} role="tab" aria-selected={page === i} className={page === i ? 'on' : ''} onClick={() => goTo(i)}>
-              <Icon n={ic} s={18} fill={page === i} /><span className="ell">{l}</span>
+              {l === 'M3X Agent' ? <AgentIcon size={18} /> : <Icon n={ic} s={18} fill={page === i} />}<span className="ell">{l}</span>
             </button>
           ))}
         </div>
@@ -140,7 +141,7 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
       {tut >= 0 && TUT[tut] && (
         <div className="tut" role="dialog" aria-label="使い方" onPointerDown={(e) => e.stopPropagation()}>
           <div className="tut-card" key={tut}>
-            <span className="tut-ic"><Icon n={TUT[tut][0]} s={28} fill /></span>
+            <span className="tut-ic">{TUT[tut][0] === 'smart_toy' ? <AgentIcon size={30} /> : <Icon n={TUT[tut][0]} s={28} fill />}</span>
             <b>{TUT[tut][1]}</b>
             <p>{TUT[tut][2]}</p>
             <div className="tut-foot">
