@@ -22,7 +22,7 @@ function AiSettings() {
   return (
     <section className="scard" id="ai">
       <h2><span className="ms" style={{ verticalAlign: '-5px', marginRight: 6 }}>auto_awesome</span>AI（Groq Console API キー）</h2>
-      <p className="muted small" style={{ marginTop: 0 }}>登録すると「Super Search」、フォロー画面の AI 要約、Keep の「EX Agent」が使えます。キーはこの端末（localStorage）にだけ保存され、リクエストごとに送られるだけでサーバーには保存・記録されません。</p>
+      <p className="muted small" style={{ marginTop: 0 }}>登録すると「Super Search」、フォロー画面の AI 要約、Keep の「Agent」が使えます。キーはこの端末（localStorage）にだけ保存され、リクエストごとに送られるだけでサーバーには保存・記録されません。</p>
       <ol className="steps small">
         <li><a className="lnk" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">console.groq.com/keys</a> を開いてログイン（無料）</li>
         <li>「Create API Key」→ 名前を付けて作成し、<code>gsk_</code> で始まるキーをコピー</li>
@@ -77,7 +77,7 @@ function MemoSettings() {
   return (
     <section className="scard" id="memo">
       <label className="sw-row">
-        <div><h2 style={{ margin: 0 }}>Keep パネル</h2><p className="muted small" style={{ margin: '4px 0 0' }}>右サイドバーの「日本のトレンド」を「Keep ／ EX Agent」パネルに置き換え、ポストや画像をドラッグして Keep・ノート・Agent に追加できるようにします。Keep 画面は左メニューの「Keep」からいつでも開けます。データはこの端末にだけ保存されます。</p></div>
+        <div><h2 style={{ margin: 0 }}>Keep パネル</h2><p className="muted small" style={{ margin: '4px 0 0' }}>右サイドバーの「日本のトレンド」を「Keep ／ Agent」パネルに置き換え、ポストや画像をドラッグして Keep・ノート・Agent に追加できるようにします。Keep 画面は左メニューの「Keep」からいつでも開けます。データはこの端末にだけ保存されます。</p></div>
         <input type="checkbox" className="switch" role="switch" checked={on} onChange={(e) => setMemoOn(e.target.checked)} aria-label="Keep パネル" />
       </label>
     </section>

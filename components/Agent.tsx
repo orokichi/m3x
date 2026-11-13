@@ -8,20 +8,23 @@ import { AiText } from './AiText';
 import AgentIcon from './AgentIcon';
 import { Icon, Loader } from './ui';
 import { useDrop } from './Memo';
+import { buildAgentRequest, wantsKeep } from '@/lib/agentPrompt';
 import { collectScreen, execAction, mouseOff, useAct, getAct, setAct, resetAct, type UiAction, type ActStep } from '@/lib/uiactions';
 
 type StepState = 'wait' | 'run' | 'done' | 'skip';
 interface Step { id: string; icon: string; run: string; done: string; state: StepState; thumbs?: string[]; exec: () => boolean | void }
 interface Run { status: 'running' | 'done' | 'undone'; steps: Omit<Step, 'exec'>[]; summary?: string }
-interface M { id: string; role: 'user' | 'assistant'; text?: string; run?: Run; pending?: boolean; err?: boolean; note?: boolean }
+interface M { id: string; role: 'user' | 'assistant'; text?: string; run?: Run; pending?: boolean; err?: boolean; note?: boolean; ctxIds?: string[]; keepIds?: string[] }
 
-const SYS = `あなたはXクライアント「EX」のKeep整理エージェント。必ず次のJSONだけを返す:
+const SYS = `あなたはXクライアント「EX」のアシスタント「Agent」。必ず次のJSONだけを返す:
 {"reply":"日本語の短い返答(最大4行)","actions":[]}
+基本はユーザーの質問に答えるだけで actions は必ず []。回答の根拠は今回渡された[コンテキスト]（と渡された場合の[Keep]）だけ。過去の会話に出てきた内容でも、今回のデータに無いものは使わない・言及しない。
+Keepへの保存・移動・整理・フォルダ作成・ノート作成は、ユーザーの今回の依頼がそれを明示的に指示したときだけ actions に入れる。自分から提案して実行しない。
 actions の要素:
 {"type":"create_folder","name":"フォルダ名"}
 {"type":"move","items":["K1","K2"],"folder":"フォルダ名"}  (Keepの保存アイテムを移動)
 {"type":"create_note","folder":"フォルダ名","title":"短いタイトル","body":"本文(箇条書き可・最大300字)","sources":["C1","K2"]}
-規則: 既存フォルダは同じ名前で再利用。「整理」「仕分け」ならKeepの全アイテムを内容ごとに2〜6個の短い日本語フォルダ名に分けてmove。ノート作成はポスト内容だけを根拠にし、sourcesに根拠IDを入れる。存在しないIDは使わない。質問だけならactionsは[]でreplyに答える(根拠は[C1]のように示す)。`;
+規則: 既存フォルダは同じ名前で再利用。ユーザーが整理・仕分けを指示した場合のみ、Keepのアイテムを内容ごとに2〜6個の短い日本語フォルダ名に分けてmove。ノート作成はポスト内容だけを根拠にし、sourcesに根拠IDを入れる。存在しないIDは使わない。根拠は[C1]のように示す。`;
 
 const SYS_ACT = `あなたはXクライアント「EX」の画面操作エージェント。「EX Mouse」という仮想マウスで実際の画面を操作して、ユーザーの目的を達成する。必ず次のJSONだけを返す:
 {"reply":"日本語の短い返答(最大3行)","steps":[],"done":false}
@@ -30,13 +33,13 @@ steps の要素:
 {"type":"click","target":"要素ID"}  (下に渡される「操作可能要素」のIDだけを使う)
 {"type":"scroll","dy":600}  (下方向が正)
 {"type":"type","target":"search","text":"検索語","submit":true}
-{"type":"dragToMemo","target":"post:ポストID"}  (ポストをドラッグして Keep に保存)
+{"type":"dragToMemo","target":"post:ポストID"}  (ポストをドラッグして Keep に保存。ユーザーが保存を明示的に指示した場合のみ)
 {"type":"askUser","question":"質問文","options":["選択肢1","選択肢2"]}  (判断に迷う・情報が足りないときだけ使う。これを返すときは他の steps を付けない)
 {"type":"wait","ms":800}
 規則: 目的が達成できたら done:true で steps は []。最大6ステップ。画面遷移(navigate)をしたら、その先の画面の要素はまだ分からないので steps はそこで止める。存在しないIDは絶対に作らない。目的の要素が見当たらなければ scroll で探すか askUser で聞く。`;
 
 const QUICK: [string, string][] = [
-  ['auto_awesome', 'Keep を自動整理して'],
+  ['auto_awesome', 'Keep を整理して'],
   ['note_add', 'コンテキストのポストからノートを作って'],
   ['summarize', 'コンテキストのポストを要約して'],
 ];
@@ -45,15 +48,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const cut = (s: string, n: number) => { const a = Array.from(s.replace(/https?:\/\/t\.co\/\w+/g, '').replace(/\s+/g, ' ').trim()); return a.length > n ? a.slice(0, n).join('') + '…' : a.join(''); };
 const uid = () => Math.random().toString(36).slice(2, 9);
 const thumbOf = (i: Item) => (i.media ? (i.media.type === 'photo' ? i.media.url : i.media.thumb || i.media.url) : i.src.image || i.src.avatar || '');
-
-/** Compact prompt context (keeps Groq tokens low). */
-function buildContext(keep: Item[], ctx: Src[]) {
-  const fs = getMemo().folders;
-  const f = fs.slice(0, 30).map((x) => `${x.name}(保存${x.items?.length || 0}/ノート${x.notes.length})`).join(', ');
-  const k = keep.slice(0, 40).map((i, n) => `K${n + 1} ${i.media ? (i.media.type === 'photo' ? '画像' : i.media.type === 'gif' ? 'GIF' : '動画') : 'ポスト'} @${i.src.handle}: ${cut(i.src.text, 70)}`).join('\n');
-  const c = ctx.map((s, n) => `C${n + 1} @${s.handle}: ${cut(s.text, 240)}`).join('\n');
-  return `[フォルダ] ${f || 'なし'}\n[Keep]\n${k || 'なし'}\n[コンテキスト]\n${c || 'なし'}`;
-}
 
 export default function Agent({ active }: { active: boolean }) {
   const has = useGroq();
@@ -162,7 +156,8 @@ export default function Agent({ active }: { active: boolean }) {
         const j = parseJson<{ reply?: string; steps?: any[]; done?: boolean }>(out);
         if (!j) throw new Error('AIの応答を解釈できませんでした');
         if (rounds === 1) setAct({ reply: String(j.reply || '').slice(0, 400) });
-        const acts = validateActs(j.steps);
+        const keepOk = wantsKeep([flow.goal, ...flow.log.filter((l) => l.startsWith('ユーザーの回答:'))].join('\n'));
+        const acts = validateActs(j.steps).filter((a) => a.type !== 'dragToMemo' || keepOk);
         let asked: Extract<UiAction, { type: 'askUser' }> | null = null;
         let executed = 0;
         for (const a of acts) {
@@ -195,18 +190,20 @@ export default function Agent({ active }: { active: boolean }) {
     const t = text.trim(); if (!t || busy || actBusy) return;
     setQ(''); setBusy(true);
     const uidU = uid(), aid = uid();
-    const hist: Msg[] = msgs.slice(histFrom).filter((m) => m.text && !m.err && !m.note).slice(-4).map((m) => ({ role: m.role, content: cut(m.text!, 300) }));
-    setMsgs((ms) => [...ms, { id: uidU, role: 'user', text: t }, { id: aid, role: 'assistant', pending: true }]);
     const keep = getMemo().folders.find((f) => f.id === KEEP)?.items || [];
     /* Read the context store fresh at send time (never a render snapshot),
-       so a deletion that just happened is always honoured. */
+       so a deletion that just happened is always honoured. History turns
+       built from a removed context post / Keep item are never resent. */
     const ctxNow = getCtx();
+    const req = buildAgentRequest({ sys: SYS, msgs: msgsRef.current, ctx: ctxNow, keep, folders: getMemo().folders, text: t, from: histFrom });
+    setMsgs((ms) => [...ms, { id: uidU, role: 'user', text: t, ctxIds: req.ctxIds, keepIds: req.keepIds }, { id: aid, role: 'assistant', pending: true, ctxIds: req.ctxIds, keepIds: req.keepIds }]);
     try {
-      const out = await groq([{ role: 'system', content: SYS }, ...hist, { role: 'user', content: `${buildContext(keep, ctxNow)}\n[依頼] ${t}` }], { tier: 'small', json: true, max: 650, temperature: 0.2 });
+      const out = await groq(req.messages as Msg[], { tier: 'small', json: true, max: 650, temperature: 0.2 });
       const j = parseJson<{ reply?: string; actions?: any[] }>(out);
       const reply = String(j?.reply || (j ? '' : out) || '').trim();
-      const actions = Array.isArray(j?.actions) ? j!.actions.slice(0, 14) : [];
-      const steps = plan(actions, keep, ctxNow);
+      /* Keep actions only on an explicit save/organize instruction in THIS message. */
+      const actions = req.keepOn && Array.isArray(j?.actions) ? j!.actions.slice(0, 14) : [];
+      const steps = plan(actions, req.keepSent as Item[], ctxNow);
       patch(aid, (m) => ({ ...m, pending: false, text: reply || (steps.length ? '実行します。' : '特に実行することはありませんでした。'), run: steps.length ? { status: 'running', steps: steps.map(({ exec, ...s }) => s) } : undefined }));
       if (steps.length) await execute(aid, steps);
     } catch (e: any) {
@@ -275,8 +272,8 @@ export default function Agent({ active }: { active: boolean }) {
     <div className="ag-wrap">
       <div className="ag-nokey">
         <span className="ag-orb"><AgentIcon size={36} /></span>
-        <h3>EX Agent</h3>
-        <p className="muted small">Groq の API キーを設定すると、ポストをもとにノートを作ったり、Keep を自動で整理したりできます。</p>
+        <h3>Agent</h3>
+        <p className="muted small">Groq の API キーを設定すると、ポストについて質問したり、頼んだときに Keep の整理やノート作成ができます。</p>
         <Link className="btn filled" href="/settings#ai"><Icon n="key" />設定で API キーを登録</Link>
       </div>
     </div>
@@ -288,8 +285,8 @@ export default function Agent({ active }: { active: boolean }) {
         {!msgs.length && (
           <div className="ag-hello">
             <span className="ag-orb"><AgentIcon size={34} /></span>
-            <b>EX Agent</b>
-            <p className="muted small">ポストをここへドラッグしてコンテキストに追加（最大{MAX_CTX}件）。Keep の整理やノート作成を頼めます。</p>
+            <b>Agent</b>
+            <p className="muted small">ポストをここへドラッグしてコンテキストに追加（最大{MAX_CTX}件）。Keep への保存・整理は頼んだときだけ行います。</p>
             <div className="ag-quick">{QUICK.map(([ic, t]) => <button key={t} className="chip sl" onClick={() => send(t)} disabled={busy}><Icon n={ic} s={18} />{t}</button>)}</div>
           </div>
         )}

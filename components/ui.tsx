@@ -165,7 +165,7 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
           {smenu && <div className="menu r" role="menu" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setSmenu(false)}>
             <button role="menuitem" onClick={() => { setSmenu(false); share(); }}><Icon n="ios_share" />共有・リンクをコピー</button>
             <button role="menuitem" onClick={() => { setSmenu(false); pickMemo(snap(t)); }}><Icon n="bookmarks" />Keep・フォルダに追加</button>
-            {groqOn && <button role="menuitem" onClick={() => { setSmenu(false); if (addCtx(snap(t))) window.dispatchEvent(new Event('m3x-open-agent')); }}><AgentIcon size={20} />EX Agent に追加</button>}
+            {groqOn && <button role="menuitem" onClick={() => { setSmenu(false); if (addCtx(snap(t))) window.dispatchEvent(new Event('m3x-open-agent')); }}><AgentIcon size={20} />Agent に追加</button>}
           </div>}
         </div>
       </div>
