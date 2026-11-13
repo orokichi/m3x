@@ -1,34 +1,36 @@
 'use client';
-import Link from 'next/link';
-import { Fragment, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMe } from '@/components/Shell';
-import { Header, Icon, TweetCard } from '@/components/ui';
+import { Icon, TweetCard } from '@/components/ui';
 import { AiText } from '@/components/AiText';
-import { x, getFollows } from '@/lib/api';
-import { groq, parseJson, compact, useGroq } from '@/lib/ai';
+import { x, getFollows, toast } from '@/lib/api';
+import { groq, parseJson, compact } from '@/lib/ai';
 import type { XTweet, Page } from '@/lib/types';
 
+/* AI search (merged former Super Search): plan with the small model → fetch → re-rank/group → summary card. */
+
 interface Plan { query?: string; keywords?: string[]; accounts?: string[]; since?: string | null; min_faves?: number; media?: boolean; lang?: string | null; sort?: string }
+interface Sum { title?: string; tldr?: string; points?: { t: string; refs?: number[] }[]; top?: number[]; off?: number[] }
 
-const EXAMPLES = ['最近1週間で話題になった生成AIのニュース', '@Nintendo の新作発表で画像つきのポスト', '天気・地震に関する速報を日本語で'];
+const PLAN_SYS = (today: string) => `X検索クエリ生成器。要望を次のJSONだけで返す。
+{"query":"X検索演算子を含む検索文字列","keywords":["本文に出そうな語・同義語(最大6)"],"accounts":["関係アカウント(@なし,分かる時のみ)"],"since":"YYYY-MM-DD|null","min_faves":0,"media":false,"lang":"ja|en|null","sort":"top|latest"}
+演算子: from: since: until: min_faves: filter:media filter:images lang: -filter:replies OR "完全一致" -除外語
+今日は${today}。「最近」=7日前、「今日」=今日をsinceに。`;
 
-const STEPS = [
-  { k: 'plan', n: '01', label: '条件を考える', desc: '要望を検索演算子に変換' },
-  { k: 'search', n: '02', label: 'X を探す', desc: '条件で検索して絞り込み' },
-  { k: 'sum', n: '03', label: '要約する', desc: '根拠を引用しながら回答' },
-] as const;
+const SUM_SYS = `Xのポスト一覧だけを根拠に、要望への要約を日本語JSONだけで返す。
+{"title":"15字以内の見出し","tldr":"2〜3文の要点","points":[{"t":"30字以内の要点","refs":[番号]}],"top":[最も関連する番号を最大3],"off":[要望と無関係な番号]}
+pointsは最大4。一覧にない情報は書かない。該当が薄ければtldrでそう述べる。`;
 
-const PLAN_SYS = (today: string) => `あなたはX(旧Twitter)の検索クエリ生成器です。ユーザーの要望を次のJSONだけで返してください。
-{"query":"X検索演算子を含む検索文字列","keywords":["本文に含まれそうな語（同義語・表記ゆれ含む、最大6語）"],"accounts":["関係するアカウントのハンドル（@なし、分かる場合のみ）"],"since":"YYYY-MM-DD または null","min_faves":0,"media":false,"lang":"ja/en/null","sort":"top か latest"}
-使える演算子: from: to: since: until: min_faves: min_retweets: filter:media filter:images filter:videos filter:links lang: -filter:replies OR "完全一致" -除外語
-今日は${today}。「最近」は7日前、「今日」は今日の日付を since にする。`;
-
-const SUM_SYS = '与えられたXのポスト一覧だけを根拠に、ユーザーの要望へ日本語で簡潔に答えてください（最大6行、箇条書き可）。根拠のポストは [番号] で引用。一覧にない情報は推測しない。該当が薄ければそう述べる。';
+const ASK_SYS = '与えられたXのポスト一覧だけを根拠に、追加の質問へ日本語で簡潔に答える（最大4行）。根拠は [番号] で引用。一覧にない情報は推測しない。';
 
 const JA = /[\u3040-\u30ff\u4e00-\u9fff]/;
+const CAP = 24;
+
+function score(t: XTweet, kws: string[]) { const s = (t.text + ' ' + t.user.name).toLowerCase(); return kws.filter((k) => s.includes(k)).length; }
+const kwsOf = (p: Plan) => (p.keywords || []).map((k) => k.toLowerCase().replace(/^[#＃]/, '')).filter(Boolean);
 
 function localFilter(list: XTweet[], p: Plan) {
-  const kws = (p.keywords || []).map((k) => k.toLowerCase().replace(/^[#＃]/, '')).filter(Boolean);
+  const kws = kwsOf(p);
   const acc = new Set([...(p.accounts || []), ...Array.from((p.query || '').matchAll(/from:@?(\w{1,15})/gi), (m) => m[1])].map((h) => h.replace(/^@/, '').toLowerCase()));
   const since = p.since ? Date.parse(p.since) : NaN;
   const base = list.filter((t) => {
@@ -39,98 +41,146 @@ function localFilter(list: XTweet[], p: Plan) {
     if (p.lang === 'en' && JA.test(t.text)) return false;
     return true;
   });
-  const score = (t: XTweet) => { const s = (t.text + ' ' + t.user.name).toLowerCase(); return kws.filter((k) => s.includes(k)).length; };
-  let out = base.filter((t) => (acc.size ? acc.has(t.user.handle.toLowerCase()) : true) && (!kws.length || score(t) > 0));
+  let out = base.filter((t) => (acc.size ? acc.has(t.user.handle.toLowerCase()) : true) && (!kws.length || score(t, kws) > 0));
   if (!out.length && acc.size) out = base.filter((t) => acc.has(t.user.handle.toLowerCase()));
-  if (!out.length && kws.length && acc.size) out = base.filter((t) => score(t) > 0);
-  out.sort(p.sort === 'latest' ? (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt) : (a, b) => score(b) - score(a) || b.likes + b.retweets - (a.likes + a.retweets));
+  if (!out.length && kws.length && acc.size) out = base.filter((t) => score(t, kws) > 0);
   return out;
 }
 
-export default function SuperSearch() {
+/** Relevance = keyword hits first, then engagement. */
+const rank = (list: XTweet[], p: Plan) => { const kws = kwsOf(p); return [...list].sort((a, b) => score(b, kws) - score(a, kws) || b.likes + b.retweets * 2 - (a.likes + a.retweets * 2)); };
+
+type Group = { k: string; label: string; icon: string; items: number[] };
+function groupOf(posts: XTweet[], s: Sum | null, p: Plan): Group[] {
+  const n = posts.length, off = new Set((s?.off || []).filter((i) => i >= 1 && i <= n));
+  if (off.size >= n) off.clear();
+  const ok = Array.from({ length: n }, (_, i) => i + 1).filter((i) => !off.has(i));
+  const kws = kwsOf(p), eng = (i: number) => posts[i - 1].likes + posts[i - 1].retweets * 2;
+  let top = (s?.top || []).filter((i) => ok.includes(i)).slice(0, 3);
+  if (!top.length) top = [...ok].sort((a, b) => score(posts[b - 1], kws) - score(posts[a - 1], kws) || eng(b) - eng(a)).slice(0, 3);
+  const rest = ok.filter((i) => !top.includes(i));
+  const latest = [...rest].sort((a, b) => +new Date(posts[b - 1].createdAt) - +new Date(posts[a - 1].createdAt)).slice(0, rest.length > 6 ? 5 : 0);
+  const rel = rest.filter((i) => !latest.includes(i));
+  return [
+    { k: 'top', label: '注目', icon: 'local_fire_department', items: top },
+    { k: 'latest', label: '最新', icon: 'schedule', items: latest },
+    { k: 'rel', label: '関連', icon: 'link', items: rel },
+  ].filter((g) => g.items.length);
+}
+
+const jump = (n: number) => {
+  const el = document.getElementById(`as-${n}`); if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+};
+
+function Cites({ refs, max }: { refs?: number[]; max: number }) {
+  const r = Array.from(new Set((refs || []).filter((n) => n >= 1 && n <= max))).slice(0, 4);
+  return <>{r.map((n) => <button key={n} type="button" className="cite" onClick={() => jump(n)} aria-label={`ポスト ${n} へ移動`}>{n}</button>)}</>;
+}
+
+/** M3 Expressive loading indicator: a shape that morphs between rounded polygons while spinning. */
+export const Morph = ({ s = 36 }: { s?: number }) => <span className="m3-morph" style={{ width: s, height: s }} role="progressbar" aria-label="読み込み中"><i /></span>;
+
+export default function SuperSearch({ q }: { q: string }) {
   const { authed, ready } = useMe();
-  const has = useGroq();
-  const [q, setQ] = useState('');
-  const [stage, setStage] = useState<'' | 'plan' | 'search' | 'sum' | 'done'>('');
+  const [stage, setStage] = useState<'plan' | 'search' | 'sum' | 'done'>('plan');
   const [plan, setPlan] = useState<Plan | null>(null);
   const [posts, setPosts] = useState<XTweet[]>([]);
-  const [answer, setAnswer] = useState('');
+  const [sum, setSum] = useState<Sum | null>(null);
   const [err, setErr] = useState('');
+  const [open, setOpen] = useState(true);
+  const [ask, setAsk] = useState('');
+  const [qa, setQa] = useState<{ q: string; a: string }[]>([]);
+  const [asking, setAsking] = useState(false);
+  const started = useRef(false);
 
-  const run = async (text = q) => {
-    const req = text.trim(); if (!req || (stage && stage !== 'done')) return;
-    setQ(req); setErr(''); setAnswer(''); setPosts([]); setPlan(null); setStage('plan');
+  useEffect(() => {
+    if (!ready || started.current) return; started.current = true;
+    (async () => {
+      try {
+        const today = new Date().toLocaleDateString('sv-SE');
+        const p = parseJson<Plan>(await groq([{ role: 'system', content: PLAN_SYS(today) }, { role: 'user', content: q }], { tier: 'small', max: 200, json: true, temperature: 0.1 })) || { query: q, keywords: q.split(/\s+/) };
+        if (!p.query) p.query = (p.keywords || [q]).join(' ');
+        setPlan(p); setStage('search');
+        let list: XTweet[] = [];
+        if (authed) {
+          const [a, b] = await Promise.all([
+            x<Page<XTweet>>('search', { q: p.query, tab: 'top' }).then((r) => r.list).catch(() => []),
+            x<Page<XTweet>>('search', { q: p.query, tab: 'latest' }).then((r) => r.list).catch(() => []),
+          ]);
+          const seen = new Set<string>(); list = [...a, ...b].filter((t) => !seen.has(t.id) && !!seen.add(t.id));
+          if (!list.length && p.keywords?.length) list = (await x<Page<XTweet>>('search', { q: p.keywords.slice(0, 6).join(' OR '), tab: 'top' })).list;
+        } else {
+          const pool = (await x<Page<XTweet>>('gpool', { ids: getFollows().map((u) => u.id), handles: p.accounts || [] })).list;
+          list = localFilter(pool, p);
+        }
+        list = rank(list, p).slice(0, CAP);
+        setPosts(list);
+        if (!list.length) { setStage('done'); return; }
+        setStage('sum');
+        const s = parseJson<Sum>(await groq([{ role: 'system', content: SUM_SYS }, { role: 'user', content: `要望: ${q}\n\nポスト:\n${compact(list, CAP, 110)}` }], { tier: 'large', max: 420, json: true, temperature: 0.2 }));
+        setSum(s || { tldr: '要約を生成できませんでした。' });
+        setStage('done');
+      } catch (e: any) { setErr(e.message); setStage('done'); }
+    })();
+  }, [ready, authed, q]);
+
+  const followUp = async () => {
+    const fq = ask.trim(); if (!fq || asking || !posts.length) return;
+    setAsk(''); setAsking(true); setQa((v) => [...v, { q: fq, a: '' }]);
     try {
-      const today = new Date().toLocaleDateString('sv-SE');
-      const p = parseJson<Plan>(await groq([{ role: 'system', content: PLAN_SYS(today) }, { role: 'user', content: req }], { tier: 'small', max: 220, json: true, temperature: 0.1 })) || { query: req, keywords: req.split(/\s+/) };
-      if (!p.query) p.query = (p.keywords || [req]).join(' ');
-      setPlan(p); setStage('search');
-      let list: XTweet[] = [];
-      if (authed) {
-        const tab = p.sort === 'latest' ? 'latest' : 'top';
-        list = (await x<Page<XTweet>>('search', { q: p.query, tab })).list;
-        if (!list.length && p.keywords?.length) list = (await x<Page<XTweet>>('search', { q: p.keywords.slice(0, 6).join(' OR '), tab })).list;
-      } else {
-        const pool = (await x<Page<XTweet>>('gpool', { ids: getFollows().map((u) => u.id), handles: p.accounts || [] })).list;
-        list = localFilter(pool, p);
-      }
-      list = list.slice(0, 30);
-      setPosts(list);
-      if (!list.length) { setStage('done'); return; }
-      setStage('sum');
-      setAnswer(await groq([{ role: 'system', content: SUM_SYS }, { role: 'user', content: `要望: ${req}\n\nポスト:\n${compact(list, 30, 140)}` }], { tier: 'large', max: 450 }));
-      setStage('done');
-    } catch (e: any) { setErr(e.message); setStage('done'); }
+      const a = await groq([{ role: 'system', content: ASK_SYS }, { role: 'user', content: `元の要望: ${q}\n要約: ${sum?.tldr || ''}\n\nポスト:\n${compact(posts, CAP, 100)}\n\n質問: ${fq}` }], { tier: 'large', max: 300 });
+      setQa((v) => v.map((m, i) => (i === v.length - 1 ? { ...m, a } : m)));
+    } catch (e: any) { setQa((v) => v.map((m, i) => (i === v.length - 1 ? { ...m, a: `⚠ ${e.message}` } : m))); }
+    setAsking(false);
   };
 
-  if (!has) return (<><Header title="Super Search" back={false} /><div className="empty"><Icon n="auto_awesome" s={48} /><h2>Groq の API キーが必要です</h2><p>設定で Groq Console の API キーを登録すると使えます。</p><Link className="btn filled" href="/settings#ai">設定を開く</Link></div></>);
+  const copy = () => {
+    if (!sum) return;
+    const txt = [sum.title, sum.tldr, ...(sum.points || []).map((p) => `・${p.t}`), ...qa.flatMap((m) => [`Q. ${m.q}`, m.a])].filter(Boolean).join('\n');
+    navigator.clipboard?.writeText(txt).then(() => toast('要約をコピーしました'), () => toast('コピーできませんでした'));
+  };
 
-  const busy = stage && stage !== 'done';
-  const stepIdx = stage === 'plan' ? 0 : stage === 'search' ? 1 : stage === 'sum' ? 2 : 3;
+  const loading = stage !== 'done';
+  const groups = stage === 'done' && posts.length ? groupOf(posts, sum, plan || {}) : [];
+  const label = stage === 'plan' ? '検索条件を考えています' : stage === 'search' ? 'X を探しています' : '要約しています';
+
   return (
-    <>
-      <Header title="Super Search" sub="AI が検索条件を考えて X を探します" back={false}>
-        <form className="ss-box" onSubmit={(e) => { e.preventDefault(); run(); }}>
-          <Icon n="auto_awesome" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="例: 最近のゲーム発表で画像つきの人気ポスト" aria-label="Super Search" />
-          <button className="icon-btn filled" type="submit" disabled={!!busy || !q.trim()} aria-label="検索"><Icon n="arrow_upward" /></button>
-        </form>
-      </Header>
-      {!stage && <div className="ss-hero">
-        <span className="ss-kicker"><Icon n="auto_awesome" s={15} fill />Super Search</span>
-        <h2 className="ss-h">探したいことを、<em>そのまま</em>書く。</h2>
-        <p className="ss-lead">AI が要望を X の検索条件に変換して探し、根拠のポストを引用しながら要約します。演算子を覚える必要はありません。</p>
-        {ready && !authed && <div className="ss-note"><Icon n="info" s={18} /><span>ゲストモードでは X 全体は検索できないため、おすすめ・フォロー中アカウントの最近のポストから AI の条件で探します。</span></div>}
-        <div className="ss-sec"><span className="ss-kicker dim">Try — 試してみる</span></div>
-        <div className="ss-examples">{EXAMPLES.map((e, i) => <button key={e} className="ss-ex" onClick={() => run(e)}><span className="ss-ex-n">{String(i + 1).padStart(2, '0')}</span><span className="ss-ex-t">{e}</span><Icon n="chevron_right" s={20} /></button>)}</div>
-        <div className="ss-sec"><span className="ss-kicker dim">How it works — 仕組み</span></div>
-        <ol className="ss-how">{STEPS.map((s) => <li key={s.k}><span className="n">{s.n}</span><b>{s.label}</b><span>{s.desc}</span></li>)}</ol>
-      </div>}
-      {!!busy && <ol className="ss-progress">{STEPS.map((s, i) => (
-        <Fragment key={s.k}>
-          {i > 0 && <span className={'bar' + (i <= stepIdx ? ' done' : '')} aria-hidden />}
-          <li className={i < stepIdx ? 'done' : i === stepIdx ? 'now' : ''}><span className="ss-pn">{i < stepIdx ? <Icon n="check" s={16} /> : s.n}</span><span>{s.label}</span></li>
-        </Fragment>
-      ))}</ol>}
-      {plan && <section className="ss-plancard">
-        <div className="ss-pc-h"><span className="ss-kicker"><Icon n="filter" s={15} />Plan — 検索条件</span><span className="spacer" />{plan.sort && <span className="ss-tag">{plan.sort === 'latest' ? 'LATEST · 最新順' : 'TOP · 人気順'}</span>}</div>
-        <code className="ss-q">{plan.query}</code>
-        {(!!plan.accounts?.length || !!plan.keywords?.length || plan.since || plan.min_faves || plan.media || plan.lang) && <div className="ss-meta">
-          {(plan.accounts || []).map((a) => <span key={a} className="chip acc">@{a.replace(/^@/, '')}</span>)}
-          {plan.since && <span className="chip">since: {plan.since}</span>}
-          {!!plan.min_faves && <span className="chip">いいね {plan.min_faves}+</span>}
-          {plan.media && <span className="chip">メディアつき</span>}
-          {plan.lang && <span className="chip">{plan.lang === 'ja' ? '日本語' : plan.lang === 'en' ? '英語' : plan.lang}</span>}
-          {(plan.keywords || []).map((k) => <span key={k} className="chip kw">{k}</span>)}
+    <div className="as">
+      {(loading || sum || err) && <section className={'as-card' + (open ? '' : ' closed')} aria-busy={loading}>
+        <div className="as-top">
+          <span className="as-badge">{loading ? <Morph s={26} /> : <Icon n="auto_awesome" s={20} fill />}</span>
+          <div className="as-ttl">
+            <span className="as-kick">AI 要約</span>
+            {loading ? <i className="sk sk-t" /> : <h2>{err ? 'エラー' : sum?.title || q}</h2>}
+          </div>
+          {!loading && sum && <button type="button" className="icon-btn" onClick={copy} aria-label="要約をコピー" title="コピー"><Icon n="content_copy" s={20} /></button>}
+          <button type="button" className="icon-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label={open ? '折りたたむ' : '展開する'}><Icon n={open ? 'expand_less' : 'expand_more'} /></button>
+        </div>
+        {open && <div className="as-body">
+          {loading ? <>
+            <p className="as-stage">{label}…</p>
+            <div className="as-skel"><i className="sk" /><i className="sk" /><i className="sk" style={{ width: '62%' }} /></div>
+            <div className="as-chips"><i className="sk sk-c" /><i className="sk sk-c" /><i className="sk sk-c" /></div>
+          </> : err ? <p className="ss-err"><Icon n="error" s={18} /><span>{err}</span></p> : sum && <>
+            {sum.tldr && <p className="as-tldr">{sum.tldr}</p>}
+            {!!sum.points?.length && <ul className="as-pts">{sum.points.slice(0, 4).map((p, i) => <li key={i}><span className="as-dot" /><span className="as-pt">{p.t}</span><Cites refs={p.refs} max={posts.length} /></li>)}</ul>}
+            {qa.map((m, i) => <div key={i} className="as-qa"><div className="ai-msg user">{m.q}</div>{m.a ? <div className="ai-msg assistant"><AiText text={m.a} anchor="as" /></div> : <div className="as-skel sm"><i className="sk" /><i className="sk" style={{ width: '70%' }} /></div>}</div>)}
+            {!!posts.length && <form className="ai-ask as-ask" onSubmit={(e) => { e.preventDefault(); followUp(); }}>
+              <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="この結果について質問…" aria-label="追加の質問" />
+              <button className="icon-btn filled" type="submit" disabled={asking || !ask.trim()} aria-label="送信">{asking ? <Morph s={20} /> : <Icon n="arrow_upward" s={20} />}</button>
+            </form>}
+          </>}
         </div>}
       </section>}
-      {(stage === 'sum' || answer || err) && <section className="ai-card">
-        <div className="ai-h"><Icon n="auto_awesome" fill /><b>AI の回答</b></div>
-        {stage === 'sum' ? <div className="ai-skel"><i /><i /><i /></div> : err ? <p className="ss-err"><Icon n="error" s={18} /><span>{err}</span></p> : <AiText text={answer} anchor="ss" />}
-      </section>}
+      {plan && <div className="as-plan" title={plan.query}><Icon n="filter_alt" s={16} /><code>{plan.query}</code></div>}
       {stage === 'done' && !err && !posts.length && <div className="empty"><Icon n="search_off" s={48} /><h2>見つかりませんでした</h2><p>条件に合うポストがありませんでした。<br />言い方を変えて試してください。</p></div>}
-      {!!posts.length && <div className="ss-reshead"><span className="ss-kicker dim">Results — 検索結果</span><span className="cnt">{posts.length} 件のポスト</span></div>}
-      {posts.map((t, i) => <div key={t.id} id={`ss-${i + 1}`} className="ss-item"><span className="ss-n">{i + 1}</span><TweetCard t={t} /></div>)}
-    </>
+      {groups.map((g) => <section key={g.k} className="as-group">
+        <div className="as-gh"><Icon n={g.icon} s={18} fill /><b>{g.label}</b><span className="cnt">{g.items.length}</span></div>
+        {g.items.map((n) => <div key={posts[n - 1].id} id={`as-${n}`} className="ss-item"><span className="ss-n">{n}</span><TweetCard t={posts[n - 1]} /></div>)}
+      </section>)}
+      {ready && !authed && stage === 'done' && !!posts.length && <p className="muted small" style={{ padding: '12px 16px' }}><Icon n="info" s={16} /> ゲストモードのため、おすすめ・フォロー中アカウントの最近のポストから探しています。</p>}
+    </div>
   );
 }

@@ -13,7 +13,6 @@ import { setUiRouter } from '@/lib/uiactions';
 const SidePanel = dynamic(() => import('./SidePanel'), { ssr: false, loading: () => <div className="sp sp-skel" /> });
 const MemoPicker = dynamic(() => import('./Memo'), { ssr: false });
 const M3xMouse = dynamic(() => import('./M3xMouse'), { ssr: false });
-import { useGroq } from '@/lib/ai';
 
 const Me = createContext<{ me: XUser | null; authed: boolean; ready: boolean }>({ me: null, authed: false, ready: false });
 export const useMe = () => useContext(Me);
@@ -99,12 +98,12 @@ function Trends({ path }: { path: string }) {
 }
 
 const NAV = [
-  ['/', 'home', 'ホーム'], ['/explore', 'search', '話題を検索'], ['/notifications', 'notifications', '通知'],
-  ['/super-search', 'auto_awesome', 'Super Search'], ['/keep', 'bookmarks', 'Keep'], ['/following', 'group', 'フォロー'],
+  ['/', 'home', 'ホーム'], ['/explore', 'search', '検索'], ['/notifications', 'notifications', '通知'],
+  ['/keep', 'bookmarks', 'Keep'], ['/following', 'group', 'フォロー'],
   ['/lists', 'list_alt', 'リスト'], ['/profile', 'person', 'プロフィール'], ['/settings', 'settings', '設定'],
 ] as const;
-const GUEST = new Set(['/', '/explore', '/super-search', '/following', '/keep', '/settings']);
-const MOBILE_AUTHED = new Set(['/', '/explore', '/super-search', '/following', '/notifications', '/profile', '/keep']);
+const GUEST = new Set(['/', '/explore', '/following', '/keep', '/settings']);
+const MOBILE_AUTHED = new Set(['/', '/explore', '/following', '/notifications', '/profile', '/keep']);
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
@@ -119,7 +118,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<{ id: number; m: string }[]>([]);
   const [pick, setPick] = useState<Src | null>(null);
   const memo = useMemoOn();
-  const groq = useGroq();
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -134,9 +132,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return () => { mq.removeEventListener('change', th); window.removeEventListener('m3x-auth', auth); window.removeEventListener('m3x-compose', onC); window.removeEventListener('m3x-toast', onT); window.removeEventListener('m3x-memo-pick', onP); };
   }, []);
 
-  const nav = NAV.filter(([h]) => (authed || GUEST.has(h)) && (h !== '/super-search' || groq));
+  const nav = NAV.filter(([h]) => authed || GUEST.has(h));
   const href = (h: string) => (h === '/profile' ? (me ? `/u/${me.handle}` : '/settings') : h);
-  const on = (h: string) => (h === '/' ? path === '/' : h === '/profile' ? !!me && path.startsWith(`/u/${me.handle}`) : path.startsWith(h));
+  const on = (h: string) => (h === '/' ? path === '/' : h === '/profile' ? !!me && path.startsWith(`/u/${me.handle}`) : h === '/explore' ? path.startsWith('/explore') || path.startsWith('/search') : path.startsWith(h));
 
   return (
     <Me.Provider value={{ me, authed, ready }}>

@@ -22,7 +22,7 @@ function AiSettings() {
   return (
     <section className="scard" id="ai">
       <h2><span className="ms" style={{ verticalAlign: '-5px', marginRight: 6 }}>auto_awesome</span>AI（Groq Console API キー）</h2>
-      <p className="muted small" style={{ marginTop: 0 }}>登録すると「Super Search」、フォロー画面の AI 要約、Keep の「Agent」が使えます。キーはこの端末（localStorage）にだけ保存され、リクエストごとに送られるだけでサーバーには保存・記録されません。</p>
+      <p className="muted small" style={{ marginTop: 0 }}>登録すると検索の「AI 検索」、フォロー画面の AI 要約、Keep の「Agent」が使えます。キーはこの端末（localStorage）にだけ保存され、リクエストごとに送られるだけでサーバーには保存・記録されません。</p>
       <ol className="steps small">
         <li><a className="lnk" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">console.groq.com/keys</a> を開いてログイン（無料）</li>
         <li>「Create API Key」→ 名前を付けて作成し、<code>gsk_</code> で始まるキーをコピー</li>
@@ -34,7 +34,7 @@ function AiSettings() {
         <button className="btn filled" onClick={save} disabled={st.busy || !k.trim()}><Icon n="key" />{st.busy ? '確認中…' : '保存して接続テスト'}</button>
         {has && <button className="btn outlined" onClick={() => { setGroqKey(''); setK(''); setHas(false); setSt({}); }}><Icon n="delete" />キーを削除</button>}
       </div>
-      {st.ok && <p className="c-primary small"><b>接続できました。</b>Super Search が使えます。</p>}
+      {st.ok && <p className="c-primary small"><b>接続できました。</b>検索の AI ボタンが使えます。</p>}
       {st.err && <p className="c-err small">{st.err}</p>}
     </section>
   );

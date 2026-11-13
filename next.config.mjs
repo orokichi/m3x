@@ -6,6 +6,7 @@ export default {
     return [
       { source: '/bookmarks', destination: '/keep', permanent: false },
       { source: '/memo', destination: '/keep', permanent: false },
+      { source: '/super-search', destination: '/explore', permanent: false },
     ];
   },
 };
