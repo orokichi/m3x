@@ -8,8 +8,8 @@ import { AiText } from './AiText';
 import AgentIcon from './AgentIcon';
 import { Icon, Loader } from './ui';
 import { useDrop } from './Memo';
-import { buildAgentRequest, wantsKeep } from '@/lib/agentPrompt';
-import { collectScreen, execAction, mouseOff, useAct, getAct, setAct, resetAct, type UiAction, type ActStep } from '@/lib/uiactions';
+import { buildAgentRequest } from '@/lib/agentPrompt';
+import { useAxRun, setAxMode, startAx, answerAx, axBusy, axWaiting } from '@/lib/actions';
 
 type StepState = 'wait' | 'run' | 'done' | 'skip';
 interface Step { id: string; icon: string; run: string; done: string; state: StepState; thumbs?: string[]; exec: () => boolean | void }
@@ -25,18 +25,6 @@ actions の要素:
 {"type":"move","items":["K1","K2"],"folder":"フォルダ名"}  (Keepの保存アイテムを移動)
 {"type":"create_note","folder":"フォルダ名","title":"短いタイトル","body":"本文(箇条書き可・最大300字)","sources":["C1","K2"]}
 規則: 既存フォルダは同じ名前で再利用。ユーザーが整理・仕分けを指示した場合のみ、Keepのアイテムを内容ごとに2〜6個の短い日本語フォルダ名に分けてmove。ノート作成はポスト内容だけを根拠にし、sourcesに根拠IDを入れる。存在しないIDは使わない。根拠は[C1]のように示す。`;
-
-const SYS_ACT = `あなたはXクライアント「EX」の画面操作エージェント。「EX Mouse」という仮想マウスで実際の画面を操作して、ユーザーの目的を達成する。必ず次のJSONだけを返す:
-{"reply":"日本語の短い返答(最大3行)","steps":[],"done":false}
-steps の要素:
-{"type":"navigate","path":"/keep"}  (主要パス: /, /explore, /notifications, /super-search, /keep, /following, /lists, /settings, /search?q=キーワード)
-{"type":"click","target":"要素ID"}  (下に渡される「操作可能要素」のIDだけを使う)
-{"type":"scroll","dy":600}  (下方向が正)
-{"type":"type","target":"search","text":"検索語","submit":true}
-{"type":"dragToMemo","target":"post:ポストID"}  (ポストをドラッグして Keep に保存。ユーザーが保存を明示的に指示した場合のみ)
-{"type":"askUser","question":"質問文","options":["選択肢1","選択肢2"]}  (判断に迷う・情報が足りないときだけ使う。これを返すときは他の steps を付けない)
-{"type":"wait","ms":800}
-規則: 目的が達成できたら done:true で steps は []。最大6ステップ。画面遷移(navigate)をしたら、その先の画面の要素はまだ分からないので steps はそこで止める。存在しないIDは絶対に作らない。目的の要素が見当たらなければ scroll で探すか askUser で聞く。`;
 
 const QUICK: [string, string][] = [
   ['auto_awesome', 'Keep を整理して'],
@@ -86,107 +74,21 @@ export default function Agent({ active }: { active: boolean }) {
   const patch = (id: string, f: (m: M) => M) => setMsgs((ms) => ms.map((m) => (m.id === id ? f(m) : m)));
   const patchRun = (id: string, f: (r: Run) => Run) => patch(id, (m) => (m.run ? { ...m, run: f(m.run) } : m));
 
-  /* ================= Actions mode (screen operation) =================
-     When on (or while a question is pending), send() plans structured UI
-     actions, the executor in lib/uiactions runs them with the EX Mouse,
-     and the loop re-plans against the new screen until the AI reports
-     done or asks the user a question.
-     The run itself lives in the module-level store in lib/uiactions:
-     on narrow screens this component is hosted by the /memo page, so a
-     run that navigates away unmounts the Agent — the store (and the
-     orphaned loop writing to it) survives, and a remounted Agent shows
-     the same run and its pending question again. */
-  const [actMode, setActMode] = useState(false);
-  const act = useAct();
-  const actBusy = act.status === 'running';
-  const labelRef = useRef(new Map<string, string>());
-
-  function validateActs(raw: any): UiAction[] {
-    if (!Array.isArray(raw)) return [];
-    const out: UiAction[] = [];
-    for (const a of raw.slice(0, 6)) {
-      if (!a || typeof a !== 'object') continue;
-      const tgt = typeof a.target === 'string' ? a.target.slice(0, 90) : '';
-      if (a.type === 'navigate' && typeof a.path === 'string' && a.path.startsWith('/') && a.path.length <= 140) out.push({ type: 'navigate', path: a.path });
-      else if (a.type === 'click' && tgt) out.push({ type: 'click', target: tgt });
-      else if (a.type === 'scroll') out.push({ type: 'scroll', dy: Math.max(-2400, Math.min(2400, Number(a.dy) || 600)) });
-      else if (a.type === 'type' && tgt && typeof a.text === 'string' && a.text) out.push({ type: 'type', target: tgt, text: a.text.slice(0, 280), submit: !!a.submit });
-      else if (a.type === 'dragToMemo' && tgt) out.push({ type: 'dragToMemo', target: tgt });
-      else if (a.type === 'askUser' && typeof a.question === 'string' && a.question.trim()) out.push({ type: 'askUser', question: a.question.slice(0, 200), options: Array.isArray(a.options) ? a.options.filter((o: any) => typeof o === 'string').slice(0, 4).map((o: string) => o.slice(0, 60)) : [] });
-      else if (a.type === 'wait') out.push({ type: 'wait', ms: Math.max(0, Math.min(3000, Number(a.ms) || 500)) });
-    }
-    return out;
-  }
-
-  const actLabel = (a: UiAction): { icon: string; label: string } => {
-    const L = (id: string) => labelRef.current.get(id) || id;
-    switch (a.type) {
-      case 'navigate': return { icon: 'navigation', label: `「${a.path}」へ移動` };
-      case 'click': return { icon: 'mouse', label: `「${L(a.target)}」をクリック` };
-      case 'scroll': return { icon: 'swipe', label: a.dy >= 0 ? '下へスクロール' : '上へスクロール' };
-      case 'type': return { icon: 'edit', label: `「${L(a.target)}」に「${cut(a.text, 24)}」と入力` };
-      case 'dragToMemo': return { icon: 'sticky_note_2', label: `「${L(a.target)}」を Keep へドラッグ` };
-      case 'askUser': return { icon: 'help', label: 'ユーザーに質問' };
-      case 'wait': return { icon: 'hourglass_top', label: '少し待機' };
-    }
-  };
-
-  async function sendAct(text: string) {
-    const t = text.trim(); if (!t) return;
-    if (getAct().status === 'running') return; /* a run is already going (maybe in an unmounted instance) */
-    setQ(''); setBusy(true);
-    const resuming = getAct().status === 'waiting' && !!getAct().goal;
-    if (resuming) {
-      setAct({ status: 'running', question: null, summary: '', log: [...getAct().log, `ユーザーの回答: ${t}`] });
-    } else {
-      resetAct();
-      setAct({ status: 'running', goal: t, log: [], steps: [] });
-    }
-    setMsgs((ms) => [...ms, { id: uid(), role: 'user', text: t }]);
-    const stepsUi: ActStep[] = [...getAct().steps];
-    const syncSteps = () => setAct({ steps: [...stepsUi] });
-    try {
-      let rounds = 0; let finished = false;
-      while (rounds++ < 5 && !finished) {
-        const flow = getAct();
-        const screen = collectScreen();
-        labelRef.current = new Map(screen.els.map((e) => [e.id, e.label]));
-        const prompt = `[現在の画面] パス: ${screen.path}\n[操作可能要素（ID : 内容）]\n${screen.els.map((e) => `${e.id} : ${e.label}`).join('\n') || 'なし'}\n[目的] ${flow.goal}\n[これまでの経過]\n${flow.log.join('\n') || 'なし'}`;
-        const out = await groq([{ role: 'system', content: SYS_ACT }, { role: 'user', content: prompt }], { tier: 'large', json: true, max: 900, temperature: 0.2 });
-        const j = parseJson<{ reply?: string; steps?: any[]; done?: boolean }>(out);
-        if (!j) throw new Error('AIの応答を解釈できませんでした');
-        if (rounds === 1) setAct({ reply: String(j.reply || '').slice(0, 400) });
-        const keepOk = wantsKeep([flow.goal, ...flow.log.filter((l) => l.startsWith('ユーザーの回答:'))].join('\n'));
-        const acts = validateActs(j.steps).filter((a) => a.type !== 'dragToMemo' || keepOk);
-        let asked: Extract<UiAction, { type: 'askUser' }> | null = null;
-        let executed = 0;
-        for (const a of acts) {
-          const meta = actLabel(a);
-          const st: ActStep = { id: uid(), ...meta, state: 'wait' };
-          stepsUi.push(st); syncSteps();
-          if (a.type === 'askUser') { asked = a; st.state = 'done'; syncSteps(); setAct({ log: [...getAct().log, `質問: ${a.question}`] }); break; }
-          st.state = 'run'; syncSteps();
-          const r = await execAction(a);
-          st.state = r === 'ok' ? 'done' : 'skip'; if (r === 'ok') executed++;
-          syncSteps();
-          setAct({ log: [...getAct().log, `実行: ${meta.label} → ${r === 'ok' ? '成功' : 'スキップ（対象が見つからず）'}`] });
-        }
-        if (asked) {
-          setAct({ status: 'waiting', question: { q: asked.question, options: asked.options || [] } });
-          return; /* wait for the user's answer; the store keeps the flow alive */
-        }
-        if (j.done || !acts.length) { setAct({ status: 'done', summary: stepsUi.length ? '完了しました' : '' }); finished = true; }
-        else if (!executed) { setAct({ status: 'done', summary: '対象の要素が見つからず、実行できませんでした' }); finished = true; }
-        /* otherwise loop: re-plan against the new screen */
-      }
-      if (!finished) setAct({ status: 'done', summary: 'ステップ数の上限に達したため終了しました' });
-    } catch (e: any) {
-      setAct({ status: 'error', error: e.message || 'エラーが発生しました' });
-    } finally { setBusy(false); mouseOff(); }
-  }
+  /* Actions mode: the loop, step log, questions and confirmations live in
+     lib/actions + the Shell-level ActionsPanel, so they survive navigation
+     and this component unmounting. Here: only the toggle and the prompt. */
+  const ax = useAxRun();
+  const actBusy = ax.status === 'thinking' || ax.status === 'acting' || ax.status === 'confirm';
+  const actMode = ax.mode;
 
   async function send(text: string) {
-    if (actMode || getAct().status === 'waiting') return sendAct(text);
+    if (axWaiting()) { answerAx(text); setQ(''); return; }
+    if (actMode) {
+      const g = text.trim(); if (!g || axBusy()) return;
+      setQ(''); startAx(g);
+      setMsgs((ms) => [...ms, { id: uid(), role: 'user', text: g }, { id: uid(), role: 'assistant', note: true, text: 'Actions を開始しました（右下のパネルで進行を表示）' }]);
+      return;
+    }
     const t = text.trim(); if (!t || busy || actBusy) return;
     setQ(''); setBusy(true);
     const uidU = uid(), aid = uid();
@@ -300,24 +202,6 @@ export default function Agent({ active }: { active: boolean }) {
           </div>
         ))}
       </div>
-      {act.status !== 'idle' && (
-        <div className="ag-live">
-          {act.reply && <p className="ag-live-reply">{act.reply}</p>}
-          {!!act.steps.length && <ActCard run={{ status: act.status === 'done' ? 'done' : 'running', steps: act.steps, summary: act.status === 'done' ? act.summary : undefined }} />}
-          {act.status === 'error' && <div className="ag-live-err"><Icon n="error" s={18} /><span>{act.error}</span></div>}
-          {act.status === 'waiting' && act.question && (
-            <div className="ag-q">
-              <div className="ag-q-h"><Icon n="help" s={18} />Agent からの質問です</div>
-              <p style={{ margin: 0 }}>{act.question.q}</p>
-              {!!act.question.options.length && <div className="ag-q-opts">{act.question.options.map((o) => (
-                <button key={o} className="chip sl" onClick={() => sendAct(o)}>{o}</button>
-              ))}</div>}
-              <p className="muted small" style={{ margin: 0 }}>選択肢をタップするか、下の入力欄から自由に返信してください</p>
-            </div>
-          )}
-          {act.status !== 'running' && <button className="icon-btn sm ag-live-x" onClick={() => resetAct()} aria-label="閉じる"><Icon n="close" s={18} /></button>}
-        </div>
-      )}
       <div className="ag-dock">
         <div className={'ag-ctx' + (d.over ? ' over' : '')}>
           <span className={'mx-count' + (ctx.length >= MAX_CTX ? ' full' : '')} title="コンテキストのポスト">{ctx.length}/{MAX_CTX}</span>
@@ -333,10 +217,10 @@ export default function Agent({ active }: { active: boolean }) {
           </> : <span className="muted small ell">{d.over ? 'ドロップして追加' : 'ポストをドラッグしてコンテキストに追加'}</span>}
         </div>
         <form className="ag-in" onSubmit={(e) => { e.preventDefault(); send(q); }}>
-          <button type="button" className={'ag-mode' + (actMode ? ' on' : '')} onClick={() => setActMode((v) => !v)} aria-pressed={actMode} title="Actions モード：EX Mouse が画面を操作します">
+          <button type="button" className={'ag-mode' + (actMode ? ' on' : '')} onClick={() => setAxMode(!actMode)} aria-pressed={actMode} title="Actions：プロンプトで EX Mouse がアプリを操作します">
             <Icon n="mouse" s={19} /><span>Actions</span>
           </button>
-          <textarea ref={ta} rows={1} value={q} onChange={(e) => setQ(e.target.value)} placeholder={actMode ? 'Actions：やりたいことを入力（例：最新のポストを Keep に入れて）' : 'Agent に頼む…（例: Keep を整理して）'} aria-label="メッセージ"
+          <textarea ref={ta} rows={1} value={q} onChange={(e) => setQ(e.target.value)} placeholder={ax.status === 'asking' ? 'Agent の質問に返信…' : actMode ? 'Actions：やりたいことを入力（例：話題タブでAIのポストを探して）' : 'Agent に頼む…（例: Keep を整理して）'} aria-label="メッセージ"
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(q); } }} tabIndex={active ? 0 : -1} />
           <button className={'ag-send' + (busy || actBusy ? ' busy' : '')} type="submit" disabled={busy || actBusy || !q.trim()} aria-label="送信">{busy || actBusy ? <Loader s={22} /> : <Icon n="arrow_upward" />}</button>
         </form>
@@ -366,25 +250,6 @@ function RunCard({ run, canUndo, onUndo }: { run: Run; canUndo: boolean; onUndo:
           <Icon n={run.status === 'undone' ? 'undo' : 'task_alt'} s={18} /><span className="ell">{run.summary}</span><span className="spacer" />
           {canUndo && <button className="btn tonal sm" onClick={onUndo}><Icon n="undo" />元に戻す</button>}
         </div>
-      )}
-    </div>
-  );
-}
-
-/** Live step list for an Actions (screen operation) run. Rendered from the
-    module-level act store, so it survives the Agent being unmounted by
-    navigation and reappears when the user comes back. */
-function ActCard({ run }: { run: { status: 'running' | 'done'; steps: ActStep[]; summary?: string } }) {
-  return (
-    <div className={'ag-run ' + run.status}>
-      {run.steps.map((s) => (
-        <div key={s.id} className={'ag-step ' + s.state}>
-          <span className="ag-si">{s.state === 'run' ? <Loader s={22} /> : s.state === 'done' ? <Icon n="check_circle" s={20} fill /> : s.state === 'skip' ? <Icon n="remove_circle" s={20} /> : <Icon n={s.icon} s={20} />}</span>
-          <span className="ag-sl">{s.label}</span>
-        </div>
-      ))}
-      {run.status !== 'running' && run.summary && (
-        <div className="ag-sum"><Icon n="task_alt" s={18} /><span className="ell">{run.summary}</span></div>
       )}
     </div>
   );

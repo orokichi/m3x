@@ -57,7 +57,7 @@ function FolderRow({ f, open }: { f: Folder; open: () => void }) {
   if (mode === 'del') return <div className="mx-row"><Confirm label={`「${f.name}」と中身${fCount(f)}件を削除しますか？`} onYes={() => memo.delFolder(f.id)} onNo={() => setMode('')} /></div>;
   return (
     <div className={'mx-row sl' + (d.over ? ' over' : '') + (f.keep ? ' keep' : '')} data-fid={f.id} {...d.props}>
-      <button className="mx-open" onClick={open} title={f.name} data-action="folder" data-tid={f.id} data-label={f.keep ? 'Keep（保存済みポスト）' : `フォルダ「${f.name}」`}>
+      <button className="mx-open" onClick={open} title={f.name} data-ax={`folder:${f.id}`} data-ax-label={f.keep ? 'Keep（保存済みポスト）' : `フォルダ「${f.name}」`}>
         <Icon n={fIcon(f)} fill /><span className="ell">{f.name}{f.keep && <span className="mx-sub">ポストや画像をドロップして保存</span>}</span><span className="mx-count">{fCount(f)}</span>
       </button>
       {f.keep ? <span className="mx-lock" title="Keep は削除できません"><Icon n="lock" s={16} /></span> : <>
@@ -106,7 +106,7 @@ export function ItemGrid({ f, items, compact }: { f: Folder; items: Item[]; comp
 function NoteCard({ f, n, open, label }: { f: Folder; n: Note; open: () => void; label?: string }) {
   const d = useDrop((x) => memo.addSource(f.id, n.id, x.src));
   return (
-    <button className={'mx-note' + (d.over ? ' over' : '')} onClick={open} {...d.props} data-action="note" data-tid={n.id} data-label={`ノート「${n.title || '無題のノート'}」`}>
+    <button className={'mx-note' + (d.over ? ' over' : '')} onClick={open} {...d.props} data-ax={`note:${n.id}`} data-ax-label={`ノート「${n.title || '無題のノート'}」`}>
       <b className="clamp2">{n.title || '無題のノート'}</b>
       {n.body && <span className="mx-nb">{n.body}</span>}
       <span className="mx-nf">

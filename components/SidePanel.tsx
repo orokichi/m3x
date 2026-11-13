@@ -125,7 +125,7 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
         <div className="sp-seg" role="tablist" aria-label="パネル">
           <i className="sp-ind" aria-hidden />
           {PAGES.map(([ic, l], i) => (
-            <button key={l} role="tab" aria-selected={page === i} className={page === i ? 'on' : ''} onClick={() => goTo(i)}>
+            <button key={l} role="tab" aria-selected={page === i} className={page === i ? 'on' : ''} onClick={() => goTo(i)} data-ax={`panel:${i ? 'agent' : 'keep'}`} data-ax-label={`パネル「${l}」`}>
               {l === 'Agent' ? <AgentIcon size={18} /> : <Icon n={ic} s={18} fill={page === i} />}<span className="ell">{l}</span>
             </button>
           ))}
