@@ -8,12 +8,9 @@ import { x, getCreds, shrink, toast, fmtNum } from '@/lib/api';
 import type { XTweet, XUser, XTrend } from '@/lib/types';
 import { Avatar, Icon, RichText } from './ui';
 import { useMemoOn, type Src } from '@/lib/memo';
-import { setAxRouter } from '@/lib/actions';
 
 const SidePanel = dynamic(() => import('./SidePanel'), { ssr: false, loading: () => <div className="sp sp-skel" /> });
 const MemoPicker = dynamic(() => import('./Memo'), { ssr: false });
-const ExMouse = dynamic(() => import('./ExMouse'), { ssr: false });
-const ActionsPanel = dynamic(() => import('./ActionsPanel'), { ssr: false });
 
 const Me = createContext<{ me: XUser | null; authed: boolean; ready: boolean }>({ me: null, authed: false, ready: false });
 export const useMe = () => useContext(Me);
@@ -49,7 +46,7 @@ function Composer({ me, onClose, replyTo, quote }: { me: XUser | null; onClose: 
         {replyTo && <div className="reply-ctx"><Avatar u={replyTo.user} /><div><b>{replyTo.user.name}</b> <span className="muted">@{replyTo.user.handle}</span><div className="clamp3"><RichText t={replyTo} /></div><div className="muted small" style={{ marginTop: 8 }}>返信先: <span className="lnk">@{replyTo.user.handle}</span></div></div></div>}
         <div className="row-flex" style={{ alignItems: 'flex-start', gap: 12 }}>
           <Avatar u={me || undefined} />
-          <textarea autoFocus data-ax="compose-text" data-ax-label="ポスト入力欄" value={text} onChange={(e) => setText(e.target.value)} placeholder={replyTo ? '返信をポスト' : quote ? 'コメントを追加' : 'いまどうしてる？'} rows={4} />
+          <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder={replyTo ? '返信をポスト' : quote ? 'コメントを追加' : 'いまどうしてる？'} rows={4} />
         </div>
         {!!imgs.length && <div className="cimgs">{imgs.map((s, i) => <div key={i}><img src={s} alt="" /><button className="icon-btn" onClick={() => setImgs(imgs.filter((_, j) => j !== i))}><Icon n="close" s={18} /></button></div>)}</div>}
         {quote && <div className="quote" style={{ marginLeft: 52 }}><div className="qhead"><Avatar u={quote.user} size={20} /><b>{quote.user.name}</b><span className="muted">@{quote.user.handle}</span></div><div className="qtext clamp3"><RichText t={quote} /></div></div>}
@@ -58,7 +55,7 @@ function Composer({ me, onClose, replyTo, quote }: { me: XUser | null; onClose: 
           <button className="icon-btn sl c-primary" onClick={() => file.current?.click()} disabled={imgs.length >= 4} aria-label="画像"><Icon n="image" /></button>
           <span className="spacer" />
           <span className={'small ' + (len > 280 ? 'c-err' : 'muted')}>{len}/280</span>
-          <button className="btn filled" data-ax="compose-submit" data-ax-risk="1" data-ax-label={replyTo ? '返信を送信' : 'ポストを投稿'} disabled={busy || (!text.trim() && !imgs.length)} onClick={post}>{busy ? '送信中…' : replyTo ? '返信' : 'ポストする'}</button>
+          <button className="btn filled" disabled={busy || (!text.trim() && !imgs.length)} onClick={post}>{busy ? '送信中…' : replyTo ? '返信' : 'ポストする'}</button>
         </div>
       </div>
     </div>
@@ -109,8 +106,6 @@ const MOBILE_AUTHED = new Set(['/', '/explore', '/following', '/notifications', 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
-  /* Agent Actions navigates via the router when no nav element is visible. */
-  useEffect(() => { setAxRouter((p) => router.push(p)); }, [router]);
   const [me, setMe] = useState<XUser | null>(null);
   const [authed, setAuthed] = useState(false);
   const [ready, setReady] = useState(false);
@@ -140,11 +135,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     <Me.Provider value={{ me, authed, ready }}>
       <div className="layout">
         <nav className="leftnav">
-          <Link href="/" className="logo-x" aria-label="EX" data-ax="logo" data-ax-label="ホーム（ロゴ）"><span className="lm">X</span><span className="lt">EX</span></Link>
+          <Link href="/" className="logo-x" aria-label="EX"><span className="lm">X</span><span className="lt">EX</span></Link>
           {nav.map(([h, ic, label]) => (
-            <Link key={h} href={href(h)} className={'nav-i' + (on(h) ? ' on' : '')} data-ax={`nav:${href(h)}`} data-ax-label={`ナビ「${label}」`}><span className="pill"><Icon n={ic} fill={on(h)} /></span><span className="nl">{label}</span></Link>
+            <Link key={h} href={href(h)} className={'nav-i' + (on(h) ? ' on' : '')}><span className="pill"><Icon n={ic} fill={on(h)} /></span><span className="nl">{label}</span></Link>
           ))}
-          {authed && <button className="btn filled lg post-btn" data-ax="compose" data-ax-label="ポスト作成画面を開く" onClick={() => compose()}><Icon n="edit" /><span className="nl">ポストする</span></button>}
+          {authed && <button className="btn filled lg post-btn" onClick={() => compose()}><Icon n="edit" /><span className="nl">ポストする</span></button>}
           <span className="spacer" />
           {me ? <Link href={`/u/${me.handle}`} className="me-card sl"><Avatar u={me} /><div className="nl ur-t"><b className="ell">{me.name}</b><span className="muted ell">@{me.handle}</span></div></Link>
             : ready && <div className="me-card"><span className="av ph" style={{ width: 40, height: 40 }}><Icon n="visibility" /></span><div className="nl ur-t"><b>ゲストモード</b><span className="muted small">ログインなしで閲覧中</span></div></div>}
@@ -154,15 +149,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       </div>
       <nav className="bottomnav">
         {(authed ? nav.filter(([h]) => MOBILE_AUTHED.has(h)) : nav).map(([h, ic, label]) => (
-          <Link key={h} href={href(h)} className={on(h) ? 'on' : ''} aria-label={label} data-ax={`nav:${href(h)}`} data-ax-label={`ナビ「${label}」`}><span className="pill"><Icon n={ic} fill={on(h)} /></span></Link>
+          <Link key={h} href={href(h)} className={on(h) ? 'on' : ''} aria-label={label}><span className="pill"><Icon n={ic} fill={on(h)} /></span></Link>
         ))}
       </nav>
-      {authed && !path.startsWith('/settings') && <button className="fab" data-ax="compose" data-ax-label="ポスト作成画面を開く" onClick={() => compose()} aria-label="ポストする"><Icon n="edit" /></button>}
+      {authed && !path.startsWith('/settings') && <button className="fab" onClick={() => compose()} aria-label="ポストする"><Icon n="edit" /></button>}
       {pick && <MemoPicker src={pick} onClose={() => setPick(null)} />}
       {comp && <Composer me={me} {...comp} onClose={() => setComp(null)} />}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.m}</div>)}</div>
-      <ActionsPanel />
-      <ExMouse />
     </Me.Provider>
   );
 }

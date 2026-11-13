@@ -5,18 +5,17 @@ import { img } from '@/lib/api';
 import { groq, parseJson, useGroq, type Msg } from '@/lib/ai';
 import { memo, getMemo, useCtx, getCtx, addCtx, delCtx, clearCtx, snapshot, undo, clearUndo, KEEP, MAX_CTX, MAX_SRC, type Src, type Item } from '@/lib/memo';
 import { AiText } from './AiText';
-import AgentIcon from './AgentIcon';
+import GroqMark from './GroqMark';
 import { Icon, Loader } from './ui';
 import { useDrop } from './Memo';
 import { buildAgentRequest } from '@/lib/agentPrompt';
-import { useAxRun, setAxMode, startAx, answerAx, axBusy, axWaiting } from '@/lib/actions';
 
 type StepState = 'wait' | 'run' | 'done' | 'skip';
 interface Step { id: string; icon: string; run: string; done: string; state: StepState; thumbs?: string[]; exec: () => boolean | void }
 interface Run { status: 'running' | 'done' | 'undone'; steps: Omit<Step, 'exec'>[]; summary?: string }
 interface M { id: string; role: 'user' | 'assistant'; text?: string; run?: Run; pending?: boolean; err?: boolean; note?: boolean; ctxIds?: string[]; keepIds?: string[] }
 
-const SYS = `あなたはXクライアント「EX」のアシスタント「Agent」。必ず次のJSONだけを返す:
+const SYS = `あなたはXクライアント「EX」のアシスタント「Groq」。必ず次のJSONだけを返す:
 {"reply":"日本語の短い返答(最大4行)","actions":[]}
 基本はユーザーの質問に答えるだけで actions は必ず []。回答の根拠は今回渡された[コンテキスト]（と渡された場合の[Keep]）だけ。過去の会話に出てきた内容でも、今回のデータに無いものは使わない・言及しない。
 Keepへの保存・移動・整理・フォルダ作成・ノート作成は、ユーザーの今回の依頼がそれを明示的に指示したときだけ actions に入れる。自分から提案して実行しない。
@@ -74,22 +73,8 @@ export default function Agent({ active }: { active: boolean }) {
   const patch = (id: string, f: (m: M) => M) => setMsgs((ms) => ms.map((m) => (m.id === id ? f(m) : m)));
   const patchRun = (id: string, f: (r: Run) => Run) => patch(id, (m) => (m.run ? { ...m, run: f(m.run) } : m));
 
-  /* Actions mode: the loop, step log, questions and confirmations live in
-     lib/actions + the Shell-level ActionsPanel, so they survive navigation
-     and this component unmounting. Here: only the toggle and the prompt. */
-  const ax = useAxRun();
-  const actBusy = ax.status === 'thinking' || ax.status === 'acting' || ax.status === 'confirm';
-  const actMode = ax.mode;
-
   async function send(text: string) {
-    if (axWaiting()) { answerAx(text); setQ(''); return; }
-    if (actMode) {
-      const g = text.trim(); if (!g || axBusy()) return;
-      setQ(''); startAx(g);
-      setMsgs((ms) => [...ms, { id: uid(), role: 'user', text: g }, { id: uid(), role: 'assistant', note: true, text: 'Actions を開始しました（右下のパネルで進行を表示）' }]);
-      return;
-    }
-    const t = text.trim(); if (!t || busy || actBusy) return;
+    const t = text.trim(); if (!t || busy) return;
     setQ(''); setBusy(true);
     const uidU = uid(), aid = uid();
     const keep = getMemo().folders.find((f) => f.id === KEEP)?.items || [];
@@ -173,8 +158,8 @@ export default function Agent({ active }: { active: boolean }) {
   if (!has) return (
     <div className="ag-wrap">
       <div className="ag-nokey">
-        <span className="ag-orb"><AgentIcon size={36} /></span>
-        <h3>Agent</h3>
+        <span className="ag-orb"><GroqMark compact size={30} /></span>
+        <h3><GroqMark size={22} title="Groq" /></h3>
         <p className="muted small">Groq の API キーを設定すると、ポストについて質問したり、頼んだときに Keep の整理やノート作成ができます。</p>
         <Link className="btn filled" href="/settings#ai"><Icon n="key" />設定で API キーを登録</Link>
       </div>
@@ -186,8 +171,8 @@ export default function Agent({ active }: { active: boolean }) {
       <div className="ag-list" ref={list}>
         {!msgs.length && (
           <div className="ag-hello">
-            <span className="ag-orb"><AgentIcon size={34} /></span>
-            <b>Agent</b>
+            <span className="ag-orb"><GroqMark compact size={28} /></span>
+            <b><GroqMark size={20} title="Groq" /></b>
             <p className="muted small">ポストをここへドラッグしてコンテキストに追加（最大{MAX_CTX}件）。Keep への保存・整理は頼んだときだけ行います。</p>
             <div className="ag-quick">{QUICK.map(([ic, t]) => <button key={t} className="chip sl" onClick={() => send(t)} disabled={busy}><Icon n={ic} s={18} />{t}</button>)}</div>
           </div>
@@ -217,12 +202,9 @@ export default function Agent({ active }: { active: boolean }) {
           </> : <span className="muted small ell">{d.over ? 'ドロップして追加' : 'ポストをドラッグしてコンテキストに追加'}</span>}
         </div>
         <form className="ag-in" onSubmit={(e) => { e.preventDefault(); send(q); }}>
-          <button type="button" className={'ag-mode' + (actMode ? ' on' : '')} onClick={() => setAxMode(!actMode)} aria-pressed={actMode} title="Actions：プロンプトで EX Mouse がアプリを操作します">
-            <Icon n="mouse" s={19} /><span>Actions</span>
-          </button>
-          <textarea ref={ta} rows={1} value={q} onChange={(e) => setQ(e.target.value)} placeholder={ax.status === 'asking' ? 'Agent の質問に返信…' : actMode ? 'Actions：やりたいことを入力（例：話題タブでAIのポストを探して）' : 'Agent に頼む…（例: Keep を整理して）'} aria-label="メッセージ"
+          <textarea ref={ta} rows={1} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Groq に頼む…（例: Keep を整理して）" aria-label="メッセージ"
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(q); } }} tabIndex={active ? 0 : -1} />
-          <button className={'ag-send' + (busy || actBusy ? ' busy' : '')} type="submit" disabled={busy || actBusy || !q.trim()} aria-label="送信">{busy || actBusy ? <Loader s={22} /> : <Icon n="arrow_upward" />}</button>
+          <button className={'ag-send' + (busy ? ' busy' : '')} type="submit" disabled={busy || !q.trim()} aria-label="送信">{busy ? <Loader s={22} /> : <Icon n="arrow_upward" />}</button>
         </form>
       </div>
       {d.over && <div className="ag-drop"><Icon n="add_link" s={28} />コンテキストに追加</div>}

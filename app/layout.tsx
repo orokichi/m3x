@@ -1,5 +1,4 @@
 import './globals.css';
-import './actions.css';
 import type { Metadata, Viewport } from 'next';
 import Shell from '@/components/Shell';
 import { THEME_BOOT } from '@/lib/themeBoot';

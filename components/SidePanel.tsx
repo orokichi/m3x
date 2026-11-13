@@ -2,11 +2,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MemoExplorer } from './Memo';
 import Agent from './Agent';
-import AgentIcon from './AgentIcon';
+import GroqMark from './GroqMark';
 import { Icon } from './ui';
 
 const PK = 'm3x.panelPage', TK = 'm3x.tut.panel';
-const PAGES: [string, string][] = [['bookmarks', 'Keep'], ['smart_toy', 'Agent']];
+const PAGES: [string, string][] = [['bookmarks', 'Keep'], ['smart_toy', 'Groq']];
 
 /** Critically-under-damped spring (M3 Expressive "spatial" feel), driven by rAF. */
 function useSpring(apply: (p: number) => void) {
@@ -108,14 +108,14 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
 
   const finishTut = () => { setTut(-1); try { localStorage.setItem(TK, '1'); } catch {} };
   const TUT: [string, string, string, number][] = [
-    ['swipe', 'Keep と Agent', '上のタブ、または左右スワイプ（トラックパッド・ドラッグ）でページを切り替えられます。', 0],
+    ['swipe', 'Keep と Groq', '上のタブ、または左右スワイプ（トラックパッド・ドラッグ）でページを切り替えられます。', 0],
     ['bookmarks', 'Keep に保存', 'タイムラインのポスト全体や、ポスト内の画像・動画・GIF を「Keep」へドラッグすると、あとで見返せます。', 0],
-    ['smart_toy', 'Agent', 'ポストを Agent にドロップするとコンテキストに（最大7件）。質問に答えます。Keep への保存・整理やノート作成は頼んだときだけ行います。', 1],
-    ['undo', 'いつでも元に戻せる', 'Agent の操作はステップごとに表示され、最後のまとめた操作は「元に戻す」で取り消せます。', 1],
+    ['smart_toy', 'Groq', 'ポストを Groq にドロップするとコンテキストに（最大7件）。質問に答えます。Keep への保存・整理やノート作成は頼んだときだけ行います。', 1],
+    ['undo', 'いつでも元に戻せる', 'Groq の操作はステップごとに表示され、最後のまとめた操作は「元に戻す」で取り消せます。', 1],
   ];
   useEffect(() => { if (tut >= 0 && TUT[tut]) goTo(TUT[tut][3]); }, [tut]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (agentOnly) return <div className={'sp' + (pageMode ? ' page' : '')}><div className="sp-head solo"><span className="sp-title"><AgentIcon size={22} />Agent</span></div><div className="sp-view"><Agent active /></div></div>;
+  if (agentOnly) return <div className={'sp' + (pageMode ? ' page' : '')}><div className="sp-head solo"><span className="sp-title"><GroqMark size={20} title="Groq" /></span></div><div className="sp-view"><Agent active /></div></div>;
 
   return (
     <div ref={wrap} className={'sp' + (pageMode ? ' page' : '')} style={{ ['--p' as any]: page }}
@@ -125,8 +125,8 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
         <div className="sp-seg" role="tablist" aria-label="パネル">
           <i className="sp-ind" aria-hidden />
           {PAGES.map(([ic, l], i) => (
-            <button key={l} role="tab" aria-selected={page === i} className={page === i ? 'on' : ''} onClick={() => goTo(i)} data-ax={`panel:${i ? 'agent' : 'keep'}`} data-ax-label={`パネル「${l}」`}>
-              {l === 'Agent' ? <AgentIcon size={18} /> : <Icon n={ic} s={18} fill={page === i} />}<span className="ell">{l}</span>
+            <button key={l} role="tab" aria-selected={page === i} className={page === i ? 'on' : ''} onClick={() => goTo(i)}>
+              {l === 'Groq' ? <GroqMark size={15} mono={page === i} title="Groq" /> : <><Icon n={ic} s={18} fill={page === i} /><span className="ell">{l}</span></>}
             </button>
           ))}
         </div>
@@ -141,7 +141,7 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
       {tut >= 0 && TUT[tut] && (
         <div className="tut" role="dialog" aria-label="使い方" onPointerDown={(e) => e.stopPropagation()}>
           <div className="tut-card" key={tut}>
-            <span className="tut-ic">{TUT[tut][0] === 'smart_toy' ? <AgentIcon size={30} /> : <Icon n={TUT[tut][0]} s={28} fill />}</span>
+            <span className="tut-ic">{TUT[tut][0] === 'smart_toy' ? <GroqMark compact size={28} /> : <Icon n={TUT[tut][0]} s={28} fill />}</span>
             <b>{TUT[tut][1]}</b>
             <p>{TUT[tut][2]}</p>
             <div className="tut-foot">

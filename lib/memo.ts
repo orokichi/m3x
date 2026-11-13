@@ -115,11 +115,6 @@ export function readDrop2(e: React.DragEvent): Drop | null {
 }
 export const pickMemo = (s: Src) => window.dispatchEvent(new CustomEvent('m3x-memo-pick', { detail: s }));
 
-/* ---------- tweet -> Src registry (lets the Actions executor resolve a
-   rendered post back to its Src for drag-to-Keep) ---------- */
-const srcReg = new Map<string, Src>();
-export function registerSrc(s: Src) { if (srcReg.size > 400) srcReg.clear(); srcReg.set(s.id, s); }
-export const srcById = (id: string) => srcReg.get(id);
 
 /* ---------- Agent context posts (persisted so mobile "add" works before the panel mounts) ---------- */
 export const MAX_CTX = 7;
@@ -149,7 +144,7 @@ export function addCtx(s: Src, quiet = false) {
   const c = getCtx();
   if (c.some((x) => x.id === s.id)) { toast('このポストはコンテキストに追加済みです'); return false; }
   if (c.length >= MAX_CTX) { toast(`コンテキストは最大${MAX_CTX}件までです`); return false; }
-  saveCtx([...c, s]); if (!quiet) toast(`Agent に追加しました（${c.length + 1}/${MAX_CTX}）`); return true;
+  saveCtx([...c, s]); if (!quiet) toast(`Groq に追加しました（${c.length + 1}/${MAX_CTX}）`); return true;
 }
 export const delCtx = (id: string) => saveCtx(getCtx().filter((x) => x.id !== id));
 /** Remove ALL context posts: drop the persisted key entirely (not just an
