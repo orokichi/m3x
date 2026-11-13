@@ -4,7 +4,7 @@ import Shell from '@/components/Shell';
 import { THEME_BOOT } from '@/lib/themeBoot';
 
 export const metadata: Metadata = {
-  title: 'M3X',
+  title: 'EX',
   description: 'Material 3 Expressive で作った X クライアント',
   manifest: '/manifest.webmanifest',
   icons: { icon: [{ url: '/favicon.ico', sizes: '48x48' }, { url: '/icon.svg', type: 'image/svg+xml' }], apple: '/apple-touch-icon.png' },
@@ -27,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..800&family=Noto+Sans+JP:wght@400..800&family=Instrument+Serif:ital@0;1&display=swap" />
         <link rel="stylesheet" href={SYMBOLS} />
         <link rel="preconnect" href="https://pbs.twimg.com" />
+        <link rel="preconnect" href="https://video.twimg.com" />
       </head>
       <body><Shell>{children}</Shell></body>
     </html>

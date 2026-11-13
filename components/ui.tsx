@@ -5,9 +5,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { x, ApiError, fmtNum, fmtTime, toast, getCreds, isLocalFollow, setLocalFollow, img } from '@/lib/api';
 import type { XTweet, XUser, XMedia, Page } from '@/lib/types';
-import { MIME, MIME_MEDIA, snap, kmedia, pickMemo, useMemoOn, addCtx, registerSrc } from '@/lib/memo';
+import { MIME, MIME_MEDIA, snap, kmedia, pickMemo, useMemoOn, addCtx, registerSrc, useMemo2, memo, KEEP } from '@/lib/memo';
 import { useGroq } from '@/lib/ai';
 import AgentIcon from './AgentIcon';
+import { Img, LazyVideo } from './Media';
 
 const Lightbox = dynamic(() => import('./Lightbox'), { ssr: false });
 
@@ -65,15 +66,24 @@ export function MediaGrid({ media, t }: { media: XMedia[]; t?: XTweet }) {
     e.dataTransfer.setData('text/uri-list', m.type === 'photo' ? m.url : `https://x.com/${t!.user.handle}/status/${t!.id}`);
     e.dataTransfer.effectAllowed = 'copy';
   };
+  const ms = media.slice(0, 4);
+  const r = (m: XMedia) => (m.w && m.h ? m.w / m.h : m.type === 'photo' ? 4 / 3 : 16 / 9);
+  const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+  // Frame from the original aspect ratio: single = exact (clamped 4:5..2:1, width shrinks for tall ones so height stays bounded);
+  // two = side by side with columns proportional to each ratio; three/four = 16:9 grid.
+  const frame: React.CSSProperties = one ? ({ '--r': clamp(r(one), 0.8, 2) } as any)
+    : ms.length === 2 ? { aspectRatio: String(clamp(r(ms[0]) + r(ms[1]), 1, 2.4)), gridTemplateColumns: `minmax(0,${clamp(r(ms[0]), 0.5, 2)}fr) minmax(0,${clamp(r(ms[1]), 0.5, 2)}fr)` }
+    : {};
+  const fit = (m: XMedia) => (one && Math.abs(r(m) - clamp(r(m), 0.8, 2)) < 0.01 ? 'contain' : 'cover');
   return (
     <>
-      <div className={`mgrid n${Math.min(media.length, 4)}`} onClick={(e) => e.stopPropagation()}>
-        {media.slice(0, 4).map((m, i) => m.type === 'photo'
-          ? <button key={i} className="mcell" onClick={() => setView(i)} style={one && m.w && m.h ? { aspectRatio: `${Math.max(m.w / m.h, 0.75)}` } : undefined} draggable={dragOn || undefined} onDragStart={dragOn ? drag(m) : undefined}>
-              <img src={img(m.url, 'medium')} alt="" loading="lazy" referrerPolicy="no-referrer" draggable={false} />
+      <div className={`mgrid n${ms.length}`} style={frame} onClick={(e) => e.stopPropagation()}>
+        {ms.map((m, i) => m.type === 'photo'
+          ? <button key={i} className="mcell" onClick={() => setView(i)} draggable={dragOn || undefined} onDragStart={dragOn ? drag(m) : undefined} aria-label="画像を表示">
+              <Img src={m.url} color={m.c} fit={fit(m)} />
             </button>
-          : <div key={i} className="mcell" style={m.w && m.h ? { aspectRatio: `${Math.max(m.w / m.h, 0.75)}` } : undefined} draggable={dragOn || undefined} onDragStart={dragOn ? drag(m) : undefined}>
-              <video src={m.video} poster={img(m.thumb, 'small')} controls={m.type === 'video'} autoPlay={m.type === 'gif'} loop={m.type === 'gif'} muted={m.type === 'gif'} playsInline preload="none" />
+          : <div key={i} className="mcell" draggable={dragOn || undefined} onDragStart={dragOn ? drag(m) : undefined}>
+              <LazyVideo m={m} fit={fit(m)} />
               {m.type === 'gif' && <span className="gif">GIF</span>}
             </div>)}
       </div>
@@ -96,7 +106,7 @@ function Quote({ t }: { t: XTweet }) {
 function Card({ c }: { c: NonNullable<XTweet['card']> }) {
   return (
     <a className="lcard sl" href={c.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-      {c.image && <img src={img(c.image)} alt="" loading="lazy" referrerPolicy="no-referrer" />}
+      {c.image && <span className="lc-img"><Img src={c.image} /></span>}
       <div className="lc-t"><span className="muted small">{c.domain}</span><b>{c.title}</b>{c.desc && <span className="muted small clamp2">{c.desc}</span>}</div>
     </a>
   );
@@ -111,12 +121,24 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
   const memoOn = useMemoOn();
   const groqOn = useGroq();
   const more = memoOn || groqOn;
-  const toggle = async (op: 'like' | 'retweet' | 'bookmark') => {
+  const st = useMemo2();
+  const kept = !!st.folders[0]?.items?.some((i) => !i.media && i.src.id === t.id);
+  const bmOn = kept || s.bm;
+  /** Bookmark = save to the local Keep folder (works in guest mode); also bookmarks on X when logged in. */
+  const keep = async () => {
+    const on = !bmOn;
+    if (on) memo.addItem({ src: snap(t) }, KEEP, true); else memo.unkeep(t.id);
+    toast(on ? 'Keep に保存しました' : 'Keep から削除しました');
+    if (!getCreds() || on === s.bm) return;
+    const prev = s; setS({ ...s, bm: on });
+    try { await x('bookmark', { id: t.id, on }); } catch (e: any) { setS(prev); toast(e.message); }
+  };
+  const toggle = async (op: 'like' | 'retweet') => {
     if (!authed()) return;
     const prev = s;
-    const on = op === 'like' ? !s.liked : op === 'retweet' ? !s.rt : !s.bm;
-    setS(op === 'like' ? { ...s, liked: on, likes: s.likes + (on ? 1 : -1) } : op === 'retweet' ? { ...s, rt: on, rts: s.rts + (on ? 1 : -1) } : { ...s, bm: on });
-    try { await x(op, { id: t.id, on }); if (op === 'bookmark') toast(on ? 'ブックマークに追加しました' : 'ブックマークから削除しました'); }
+    const on = op === 'like' ? !s.liked : !s.rt;
+    setS(op === 'like' ? { ...s, liked: on, likes: s.likes + (on ? 1 : -1) } : { ...s, rt: on, rts: s.rts + (on ? 1 : -1) });
+    try { await x(op, { id: t.id, on }); }
     catch (e: any) { setS(prev); toast(e.message); }
   };
   const share = async () => {
@@ -137,13 +159,13 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
       <button className={'act sl c-pink' + (s.liked ? ' on' : '')} data-action="like" data-tid={t.id} data-label={`いいね（@${t.user.handle}のポスト）`} onClick={stop(() => toggle('like'))} aria-label="いいね"><Icon n="favorite" fill={s.liked} /><span>{fmtNum(s.likes) || ''}</span></button>
       {!big && <span className="act views"><Icon n="bar_chart" /><span>{fmtNum(t.views) || ''}</span></span>}
       <div className="act-r">
-        <button className={'act sl c-blue' + (s.bm ? ' on' : '')} data-action="bookmark" data-tid={t.id} data-label={`ブックマーク（@${t.user.handle}のポスト）`} onClick={stop(() => toggle('bookmark'))} aria-label="ブックマーク"><Icon n="bookmark" fill={s.bm} /></button>
+        <button className={'act sl c-blue' + (bmOn ? ' on' : '')} data-action="bookmark" data-tid={t.id} data-label={`Keep に保存（@${t.user.handle}のポスト）`} onClick={stop(keep)} aria-label={bmOn ? 'Keep から削除' : 'Keep に保存'} aria-pressed={bmOn}><Icon n="bookmark" fill={bmOn} /></button>
         <div className="act-wrap">
           <button className="act sl c-blue" onClick={stop(() => (more ? setSmenu(!smenu) : share()))} aria-label="共有" aria-haspopup={more ? 'menu' : undefined}><Icon n="ios_share" /></button>
           {smenu && <div className="menu r" role="menu" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setSmenu(false)}>
             <button role="menuitem" onClick={() => { setSmenu(false); share(); }}><Icon n="ios_share" />共有・リンクをコピー</button>
-            <button role="menuitem" onClick={() => { setSmenu(false); pickMemo(snap(t)); }}><Icon n="sticky_note_2" />メモ・Keep に追加</button>
-            {groqOn && <button role="menuitem" onClick={() => { setSmenu(false); if (addCtx(snap(t))) window.dispatchEvent(new Event('m3x-open-agent')); }}><AgentIcon size={20} />M3X Agent に追加</button>}
+            <button role="menuitem" onClick={() => { setSmenu(false); pickMemo(snap(t)); }}><Icon n="bookmarks" />Keep・フォルダに追加</button>
+            {groqOn && <button role="menuitem" onClick={() => { setSmenu(false); if (addCtx(snap(t))) window.dispatchEvent(new Event('m3x-open-agent')); }}><AgentIcon size={20} />EX Agent に追加</button>}
           </div>}
         </div>
       </div>

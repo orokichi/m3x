@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { img } from '@/lib/api';
 import { memo, useMemo2, readDrop2, hasDrop, ensureKeep, KEEP, MAX_SRC, type Folder, type Note, type Src, type Item, type Drop } from '@/lib/memo';
 import { Icon } from './ui';
+import { Img } from './Media';
 
 const Lightbox = dynamic(() => import('./Lightbox'), { ssr: false });
 
@@ -78,7 +79,7 @@ export function ItemGrid({ f, items, compact }: { f: Folder; items: Item[]; comp
           <div key={it.id} className={'kp-tile' + (it.media ? ' media' : ' post')}>
             {it.media ? (
               <button className="kp-media sl" onClick={() => setView(it)} title={`@${it.src.handle}: ${it.src.text.slice(0, 60)}`}>
-                <img src={img(it.media.type === 'photo' ? it.media.url : it.media.thumb || it.media.url, 'small')} alt="" loading="lazy" referrerPolicy="no-referrer" draggable={false} />
+                <Img src={it.media.type === 'photo' ? it.media.url : it.media.thumb || it.media.url} />
                 {it.media.type !== 'photo' && <span className="kp-badge"><Icon n={it.media.type === 'gif' ? 'gif' : 'play_arrow'} s={16} fill /></span>}
               </button>
             ) : (
@@ -105,8 +106,8 @@ export function ItemGrid({ f, items, compact }: { f: Folder; items: Item[]; comp
 function NoteCard({ f, n, open, label }: { f: Folder; n: Note; open: () => void; label?: string }) {
   const d = useDrop((x) => memo.addSource(f.id, n.id, x.src));
   return (
-    <button className={'mx-note' + (d.over ? ' over' : '')} onClick={open} {...d.props} data-action="note" data-tid={n.id} data-label={`メモ「${n.title || '無題のメモ'}」`}>
-      <b className="clamp2">{n.title || '無題のメモ'}</b>
+    <button className={'mx-note' + (d.over ? ' over' : '')} onClick={open} {...d.props} data-action="note" data-tid={n.id} data-label={`ノート「${n.title || '無題のノート'}」`}>
+      <b className="clamp2">{n.title || '無題のノート'}</b>
       {n.body && <span className="mx-nb">{n.body}</span>}
       <span className="mx-nf">
         {label && <span className="mx-mini" title={label}><Icon n="folder" s={14} /><span className="ell">{label}</span></span>}
@@ -168,7 +169,7 @@ function NoteEditor({ f, n, back }: { f: Folder; n: Note; back: () => void }) {
       <input className="mx-title" value={title} maxLength={120} placeholder="タイトル" aria-label="タイトル"
         onChange={(e) => { setTitle(e.target.value); memo.editNote(f.id, n.id, { title: e.target.value }); }} />
       <div className="mx-bodywrap">
-        <textarea ref={ta} className="mx-body-ta" value={body} placeholder="メモを入力…  「/場所」で場所を追加" aria-label="本文"
+        <textarea ref={ta} className="mx-body-ta" value={body} placeholder="ノートを入力…  「/場所」で場所を追加" aria-label="本文"
           onChange={(e) => { setBody(e.target.value); memo.editNote(f.id, n.id, { body: e.target.value }); if (!(e.nativeEvent as any).isComposing) check(e.target.value, e.target.selectionStart); }}
           onCompositionEnd={(e) => { const t = e.currentTarget; check(t.value, t.selectionStart); }}
           onKeyDown={(e) => { if (slash && e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); runSlash(); } if (e.key === 'Escape') setSlash(false); }}
@@ -191,9 +192,9 @@ function NoteEditor({ f, n, back }: { f: Folder; n: Note; back: () => void }) {
       )}
       <div className="mx-srch"><Icon n="link" s={18} /><b>参照ポスト</b><span className={'mx-count' + (n.sources.length >= MAX_SRC ? ' full' : '')}>{n.sources.length}/{MAX_SRC}</span></div>
       {n.sources.length ? <div className="mx-srcs">{n.sources.map((s) => <SrcItem key={s.id} s={s} onDel={() => memo.delSource(f.id, n.id, s.id)} />)}</div>
-        : <div className={'mx-dropzone' + (d.over ? ' over' : '')}><Icon n="move_to_inbox" />タイムラインのポストをここへドラッグ<br /><span className="small">（スマホはポストの共有メニュー →「メモに追加」）</span></div>}
+        : <div className={'mx-dropzone' + (d.over ? ' over' : '')}><Icon n="move_to_inbox" />タイムラインのポストをここへドラッグ<br /><span className="small">（スマホはポストの共有メニュー →「Keep に追加」）</span></div>}
       <div className="mx-foot">
-        {del ? <Confirm label="このメモを削除しますか？" onYes={() => { memo.delNote(f.id, n.id); back(); }} onNo={() => setDel(false)} />
+        {del ? <Confirm label="このノートを削除しますか？" onYes={() => { memo.delNote(f.id, n.id); back(); }} onNo={() => setDel(false)} />
           : <><span className="muted small ell">更新 {new Date(n.updated).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span><span className="spacer" /><button className="btn text sm c-err" onClick={() => setDel(true)}><Icon n="delete" />削除</button></>}
       </div>
     </div>
@@ -215,13 +216,13 @@ export function MemoExplorer({ page }: { page?: boolean }) {
   const all = page && !f ? st.folders.flatMap((x) => x.notes.map((nn) => ({ f: x, n: nn }))).sort((a, b) => b.n.updated - a.n.updated) : [];
 
   return (
-    <section className={'memo-x' + (page ? ' page' : '')} aria-label="メモ">
+    <section className={'memo-x' + (page ? ' page' : '')} aria-label="Keep">
       <div className="mx-head">
         {f ? <button className="icon-btn sl" onClick={() => (n ? setNid(null) : setFid(null))} aria-label="戻る"><Icon n="arrow_back" /></button> : <span className="mx-logo"><Icon n="sticky_note_2" fill /></span>}
         <nav className="mx-crumbs" aria-label="パンくずリスト">
-          <button className={!f ? 'cur' : ''} onClick={() => { setFid(null); setNid(null); }}>メモ</button>
+          <button className={!f ? 'cur' : ''} onClick={() => { setFid(null); setNid(null); }}>Keep</button>
           {f && <><Icon n="chevron_right" s={18} /><button className={'ell' + (!n ? ' cur' : '')} onClick={() => setNid(null)} title={f.name}>{f.name}</button></>}
-          {n && <><Icon n="chevron_right" s={18} /><span className="ell cur">{n.title || '無題のメモ'}</span></>}
+          {n && <><Icon n="chevron_right" s={18} /><span className="ell cur">{n.title || '無題のノート'}</span></>}
         </nav>
       </div>
       <div className={'mx-scroll' + (f && !n && fd.over ? ' over' : '')} ref={body} {...(f && !n ? fd.props : {})}>
@@ -231,25 +232,25 @@ export function MemoExplorer({ page }: { page?: boolean }) {
           </div>
           {adding && <div className="mx-row"><Icon n="folder" /><NameInput init="" ph="フォルダ名を入力" onDone={(v) => { if (v) memo.addFolder(v); setAdding(false); }} /></div>}
           {st.folders.map((x) => <FolderRow key={x.id} f={x} open={() => { setFid(x.id); setNid(null); }} />)}
-          {st.folders.length < 2 && !adding && <div className="mx-empty"><Icon n="folder_open" s={40} /><p>フォルダを作ってメモを整理しましょう</p></div>}
+          {st.folders.length < 2 && !adding && <div className="mx-empty"><Icon n="folder_open" s={40} /><p>フォルダを作ってノートを整理しましょう</p></div>}
           {page && !!all.length && <>
-            <h3 className="mx-sec">すべてのメモ<span className="mx-count">{all.length}</span></h3>
+            <h3 className="mx-sec">すべてのノート<span className="mx-count">{all.length}</span></h3>
             <div className="mx-grid">{all.map(({ f: ff, n: nn }) => <NoteCard key={nn.id} f={ff} n={nn} label={ff.name} open={() => { setFid(ff.id); setNid(nn.id); }} />)}</div>
           </>}
           {page && st.folders[0]?.items?.length ? <>
-            <h3 className="mx-sec">Keep の最近の保存<button className="btn text sm" onClick={() => setFid(KEEP)}>すべて表示</button></h3>
-            <ItemGrid f={st.folders[0]} items={st.folders[0].items!.slice(0, 8)} compact />
+            <h3 className="mx-sec">保存したポスト<button className="btn text sm" onClick={() => setFid(KEEP)}>すべて表示</button></h3>
+            <ItemGrid f={st.folders[0]} items={st.folders[0].items!.slice(0, 24)} compact />
           </> : null}
         </>}
         {f && !n && <>
           <div className="mx-tool">
-            <button className="btn filled sm" onClick={() => setNid(memo.addNote(f.id))}><Icon n="note_add" />メモを新規作成</button>
-            <span className="muted small">{f.items?.length ? `保存 ${f.items.length}件 · ` : ''}メモ {f.notes.length}件</span>
+            <button className="btn filled sm" onClick={() => setNid(memo.addNote(f.id))}><Icon n="note_add" />ノートを新規作成</button>
+            <span className="muted small">{f.items?.length ? `保存 ${f.items.length}件 · ` : ''}ノート {f.notes.length}件</span>
           </div>
-          {f.keep && !f.items?.length && <div className={'mx-dropzone' + (fd.over ? ' over' : '')}><Icon n="bookmarks" />ポスト全体や、ポスト内の画像・動画・GIF を<br />ここへドラッグして保存<br /><span className="small">（スマホは共有メニュー →「メモに追加」→ Keep）</span></div>}
+          {f.keep && !f.items?.length && <div className={'mx-dropzone' + (fd.over ? ' over' : '')}><Icon n="bookmarks" />ポスト全体や、ポスト内の画像・動画・GIF を<br />ここへドラッグして保存<br /><span className="small">（スマホは共有メニュー →「Keep に追加」→ Keep）</span></div>}
           <ItemGrid f={f} items={f.items || []} />
-          {f.notes.length ? <>{!!f.items?.length && <h3 className="mx-sec">メモ</h3>}<div className="mx-grid">{f.notes.map((x) => <NoteCard key={x.id} f={f} n={x} open={() => setNid(x.id)} />)}</div></>
-            : !f.keep && !f.items?.length && <div className="mx-empty"><Icon n="sticky_note_2" s={40} /><p>まだメモがありません</p></div>}
+          {f.notes.length ? <>{!!f.items?.length && <h3 className="mx-sec">ノート</h3>}<div className="mx-grid">{f.notes.map((x) => <NoteCard key={x.id} f={f} n={x} open={() => setNid(x.id)} />)}</div></>
+            : !f.keep && !f.items?.length && <div className="mx-empty"><Icon n="sticky_note_2" s={40} /><p>まだノートがありません</p></div>}
         </>}
         {f && n && <NoteEditor f={f} n={n} back={() => setNid(null)} />}
       </div>
@@ -268,10 +269,10 @@ export default function MemoPicker({ src, onClose }: { src: Src; onClose: () => 
   const add = (noteId: string) => { memo.addSource(f!.id, noteId, src); close(); };
   return (
     <div className="dialog-scrim" onClick={close}>
-      <div className="dialog mx-pick" role="dialog" aria-label="メモに追加" onClick={(e) => e.stopPropagation()}>
+      <div className="dialog mx-pick" role="dialog" aria-label="Keep に追加" onClick={(e) => e.stopPropagation()}>
         <div className="row-flex">
           {f ? <button className="icon-btn sl" onClick={() => setFid(null)} aria-label="戻る"><Icon n="arrow_back" /></button> : <button className="icon-btn sl" onClick={close} aria-label="閉じる"><Icon n="close" /></button>}
-          <h2 className="ell" style={{ margin: 0, fontSize: 18 }}>{f ? f.name : 'メモに追加'}</h2>
+          <h2 className="ell" style={{ margin: 0, fontSize: 18 }}>{f ? f.name : 'Keep に追加'}</h2>
         </div>
         <p className="muted small clamp2" style={{ margin: '4px 0 12px' }}>@{src.handle}: {src.text}</p>
         <div className="mx-pick-list">
@@ -283,8 +284,8 @@ export default function MemoPicker({ src, onClose }: { src: Src; onClose: () => 
               : <button className="btn tonal sm" style={{ margin: 8 }} onClick={() => setAdding(true)}><Icon n="create_new_folder" />新しいフォルダ</button>}
           </>}
           {f && <>
-            <button className="mx-row mx-open sl" onClick={() => add(memo.addNote(f.id))}><Icon n="note_add" /><span className="ell"><b>新しいメモに追加</b></span></button>
-            {f.notes.map((x) => <button key={x.id} className="mx-row mx-open sl" onClick={() => add(x.id)}><Icon n="sticky_note_2" /><span className="ell">{x.title || '無題のメモ'}</span><span className={'mx-count' + (x.sources.length >= MAX_SRC ? ' full' : '')}>{x.sources.length}/{MAX_SRC}</span></button>)}
+            <button className="mx-row mx-open sl" onClick={() => add(memo.addNote(f.id))}><Icon n="note_add" /><span className="ell"><b>新しいノートに追加</b></span></button>
+            {f.notes.map((x) => <button key={x.id} className="mx-row mx-open sl" onClick={() => add(x.id)}><Icon n="sticky_note_2" /><span className="ell">{x.title || '無題のノート'}</span><span className={'mx-count' + (x.sources.length >= MAX_SRC ? ' full' : '')}>{x.sources.length}/{MAX_SRC}</span></button>)}
           </>}
         </div>
       </div>

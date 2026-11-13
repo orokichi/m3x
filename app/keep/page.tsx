@@ -7,12 +7,12 @@ const MemoExplorer = dynamic(() => import('@/components/Memo').then((m) => m.Mem
 const SidePanel = dynamic(() => import('@/components/SidePanel'), { ssr: false, loading: () => <Spinner /> });
 
 /** Full page: browse/review all folders, Keep and notes. Narrow screens also get the Agent page (swipe). */
-export default function MemoPage() {
+export default function KeepPage() {
   const [wide, setWide] = useState<boolean | null>(null);
   useEffect(() => { const mq = window.matchMedia('(min-width: 1061px)'); const f = () => setWide(mq.matches); f(); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f); }, []);
   return (
     <>
-      <Header title="メモ" back={false} />
+      <Header title="Keep" back={false} />
       {wide === null ? null : wide ? <div className="memo-page"><MemoExplorer page /></div> : <div className="memo-page"><SidePanel page /></div>}
     </>
   );

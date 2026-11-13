@@ -68,7 +68,7 @@ function Composer({ me, onClose, replyTo, quote }: { me: XUser | null; onClose: 
 function RightBar({ path, memo }: { path: string; memo: boolean }) {
   const [wide, setWide] = useState(false);
   useEffect(() => { const mq = window.matchMedia('(min-width: 1061px)'); const f = () => setWide(mq.matches); f(); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f); }, []);
-  const isMemo = path.startsWith('/memo');
+  const isMemo = path.startsWith('/keep');
   if (memo || isMemo) return <aside className="rightbar memo-mode">{wide && <SidePanel agentOnly={isMemo} />}</aside>;
   return <Trends path={path} />;
 }
@@ -93,23 +93,23 @@ function Trends({ path }: { path: string }) {
         ))}
         <Link href="/explore" className="trend sl lnk">さらに表示</Link>
       </section>}
-      <footer className="muted small" style={{ padding: '0 16px' }}>M3X · 非公式クライアント（X Corp. とは無関係）</footer>
+      <footer className="muted small" style={{ padding: '0 16px' }}>EX · 非公式クライアント（X Corp. とは無関係）</footer>
     </aside>
   );
 }
 
 const NAV = [
   ['/', 'home', 'ホーム'], ['/explore', 'search', '話題を検索'], ['/notifications', 'notifications', '通知'],
-  ['/bookmarks', 'bookmark', 'ブックマーク'], ['/super-search', 'auto_awesome', 'Super Search'], ['/memo', 'sticky_note_2', 'メモ'], ['/following', 'group', 'フォロー'],
+  ['/super-search', 'auto_awesome', 'Super Search'], ['/keep', 'bookmarks', 'Keep'], ['/following', 'group', 'フォロー'],
   ['/lists', 'list_alt', 'リスト'], ['/profile', 'person', 'プロフィール'], ['/settings', 'settings', '設定'],
 ] as const;
-const GUEST = new Set(['/', '/explore', '/super-search', '/following', '/memo', '/settings']);
-const MOBILE_AUTHED = new Set(['/', '/explore', '/super-search', '/following', '/notifications', '/bookmarks', '/profile', '/memo']);
+const GUEST = new Set(['/', '/explore', '/super-search', '/following', '/keep', '/settings']);
+const MOBILE_AUTHED = new Set(['/', '/explore', '/super-search', '/following', '/notifications', '/profile', '/keep']);
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
-  /* Let the M3X Agent's Actions executor navigate even when no nav
+  /* Let the EX Agent's Actions executor navigate even when no nav
      element for the destination is on screen. */
   useEffect(() => { setUiRouter((p) => router.push(p)); }, [router]);
   const [me, setMe] = useState<XUser | null>(null);
@@ -142,7 +142,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     <Me.Provider value={{ me, authed, ready }}>
       <div className="layout">
         <nav className="leftnav">
-          <Link href="/" className="logo-x" aria-label="M3X" data-action="nav" data-path="/" data-label="ホーム（ロゴ）"><span className="lm">X</span><span className="lt">M3X</span></Link>
+          <Link href="/" className="logo-x" aria-label="EX" data-action="nav" data-path="/" data-label="ホーム（ロゴ）"><span className="lm">X</span><span className="lt">EX</span></Link>
           {nav.map(([h, ic, label]) => (
             <Link key={h} href={href(h)} className={'nav-i' + (on(h) ? ' on' : '')} data-action="nav" data-path={href(h)} data-label={label}><span className="pill"><Icon n={ic} fill={on(h)} /></span><span className="nl">{label}</span></Link>
           ))}

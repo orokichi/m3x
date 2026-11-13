@@ -66,7 +66,7 @@ export const memo = {
     if (!n) return;
     if (n.sources.some((x) => x.id === s.id)) return toast('このポストは追加済みです');
     if (n.sources.length >= MAX_SRC) return toast(`参照ポストは最大${MAX_SRC}件までです`);
-    if (mapN(fid, nid, (x) => ({ ...x, sources: [...x.sources, s] }))) toast(`「${n.title || '無題のメモ'}」に追加しました（${n.sources.length + 1}/${MAX_SRC}）`);
+    if (mapN(fid, nid, (x) => ({ ...x, sources: [...x.sources, s] }))) toast(`「${n.title || '無題のノート'}」に追加しました（${n.sources.length + 1}/${MAX_SRC}）`);
   },
   /** Save a post or one media item into a folder (Keep by default). */
   addItem(d: Drop, fid = KEEP, quiet = false) {
@@ -77,6 +77,10 @@ export const memo = {
     if (ok && !quiet) toast(`${d.media ? (d.media.type === 'photo' ? '画像' : d.media.type === 'gif' ? 'GIF' : '動画') : 'ポスト'}を ${f.name} に保存しました`);
     return ok;
   },
+  /** Is this post (whole post, not a single media item) saved in Keep? */
+  isKept: (postId: string) => !!getMemo().folders[0]?.items?.some((i) => !i.media && i.src.id === postId),
+  /** Remove a whole-post save from Keep. */
+  unkeep: (postId: string) => mapF(KEEP, (x) => ({ ...x, items: (x.items || []).filter((i) => i.media || i.src.id !== postId) })),
   delItem: (fid: string, iid: string) => mapF(fid, (x) => ({ ...x, items: (x.items || []).filter((i) => i.id !== iid) })),
   /** Move items between folders in one write. */
   moveItems(ids: string[], to: string) {
@@ -117,7 +121,7 @@ const srcReg = new Map<string, Src>();
 export function registerSrc(s: Src) { if (srcReg.size > 400) srcReg.clear(); srcReg.set(s.id, s); }
 export const srcById = (id: string) => srcReg.get(id);
 
-/* ---------- M3X Agent context posts (persisted so mobile "add" works before the panel mounts) ---------- */
+/* ---------- EX Agent context posts (persisted so mobile "add" works before the panel mounts) ---------- */
 export const MAX_CTX = 7;
 const AK = 'm3x.agentCtx', AEV = 'm3x-agentctx';
 let ctxCache: Src[] = [];
@@ -145,7 +149,7 @@ export function addCtx(s: Src, quiet = false) {
   const c = getCtx();
   if (c.some((x) => x.id === s.id)) { toast('このポストはコンテキストに追加済みです'); return false; }
   if (c.length >= MAX_CTX) { toast(`コンテキストは最大${MAX_CTX}件までです`); return false; }
-  saveCtx([...c, s]); if (!quiet) toast(`M3X Agent に追加しました（${c.length + 1}/${MAX_CTX}）`); return true;
+  saveCtx([...c, s]); if (!quiet) toast(`EX Agent に追加しました（${c.length + 1}/${MAX_CTX}）`); return true;
 }
 export const delCtx = (id: string) => saveCtx(getCtx().filter((x) => x.id !== id));
 /** Remove ALL context posts: drop the persisted key entirely (not just an

@@ -6,7 +6,7 @@ import AgentIcon from './AgentIcon';
 import { Icon } from './ui';
 
 const PK = 'm3x.panelPage', TK = 'm3x.tut.panel';
-const PAGES: [string, string][] = [['sticky_note_2', 'メモ'], ['smart_toy', 'M3X Agent']];
+const PAGES: [string, string][] = [['bookmarks', 'Keep'], ['smart_toy', 'EX Agent']];
 
 /** Critically-under-damped spring (M3 Expressive "spatial" feel), driven by rAF. */
 function useSpring(apply: (p: number) => void) {
@@ -108,14 +108,14 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
 
   const finishTut = () => { setTut(-1); try { localStorage.setItem(TK, '1'); } catch {} };
   const TUT: [string, string, string, number][] = [
-    ['swipe', 'メモ と M3X Agent', '上のタブ、または左右スワイプ（トラックパッド・ドラッグ）でページを切り替えられます。', 0],
+    ['swipe', 'Keep と EX Agent', '上のタブ、または左右スワイプ（トラックパッド・ドラッグ）でページを切り替えられます。', 0],
     ['bookmarks', 'Keep に保存', 'タイムラインのポスト全体や、ポスト内の画像・動画・GIF を「Keep」へドラッグすると、あとで見返せます。', 0],
-    ['smart_toy', 'M3X Agent', 'ポストを Agent にドロップするとコンテキストに（最大7件）。「Keep を整理して」「メモを作って」と頼めます。', 1],
+    ['smart_toy', 'EX Agent', 'ポストを Agent にドロップするとコンテキストに（最大7件）。「Keep を整理して」「ノートを作って」と頼めます。', 1],
     ['undo', 'いつでも元に戻せる', 'Agent の操作はステップごとに表示され、最後のまとめた操作は「元に戻す」で取り消せます。', 1],
   ];
   useEffect(() => { if (tut >= 0 && TUT[tut]) goTo(TUT[tut][3]); }, [tut]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (agentOnly) return <div className={'sp' + (pageMode ? ' page' : '')}><div className="sp-head solo"><span className="sp-title"><AgentIcon size={22} />M3X Agent</span></div><div className="sp-view"><Agent active /></div></div>;
+  if (agentOnly) return <div className={'sp' + (pageMode ? ' page' : '')}><div className="sp-head solo"><span className="sp-title"><AgentIcon size={22} />EX Agent</span></div><div className="sp-view"><Agent active /></div></div>;
 
   return (
     <div ref={wrap} className={'sp' + (pageMode ? ' page' : '')} style={{ ['--p' as any]: page }}
@@ -126,7 +126,7 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
           <i className="sp-ind" aria-hidden />
           {PAGES.map(([ic, l], i) => (
             <button key={l} role="tab" aria-selected={page === i} className={page === i ? 'on' : ''} onClick={() => goTo(i)}>
-              {l === 'M3X Agent' ? <AgentIcon size={18} /> : <Icon n={ic} s={18} fill={page === i} />}<span className="ell">{l}</span>
+              {l === 'EX Agent' ? <AgentIcon size={18} /> : <Icon n={ic} s={18} fill={page === i} />}<span className="ell">{l}</span>
             </button>
           ))}
         </div>

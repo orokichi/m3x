@@ -6,5 +6,5 @@ export async function GET(req: NextRequest) {
   if (!OK.test(u)) return new Response('bad url', { status: 400 });
   const r = await fetch(u, { headers: { 'user-agent': 'Mozilla/5.0', accept: 'image/avif,image/webp,image/*' } });
   if (!r.ok) return new Response('upstream ' + r.status, { status: r.status });
-  return new Response(r.body, { headers: { 'content-type': r.headers.get('content-type') || 'image/jpeg', 'cache-control': 'public, max-age=86400, s-maxage=604800, immutable' } });
+  return new Response(r.body, { headers: { 'content-type': r.headers.get('content-type') || 'image/jpeg', 'cache-control': 'public, max-age=31536000, s-maxage=31536000, immutable', 'cdn-cache-control': 'public, max-age=31536000, immutable', 'access-control-allow-origin': '*' } });
 }

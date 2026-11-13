@@ -15,18 +15,18 @@ interface Step { id: string; icon: string; run: string; done: string; state: Ste
 interface Run { status: 'running' | 'done' | 'undone'; steps: Omit<Step, 'exec'>[]; summary?: string }
 interface M { id: string; role: 'user' | 'assistant'; text?: string; run?: Run; pending?: boolean; err?: boolean; note?: boolean }
 
-const SYS = `あなたはXクライアント「M3X」のメモ整理エージェント。必ず次のJSONだけを返す:
+const SYS = `あなたはXクライアント「EX」のKeep整理エージェント。必ず次のJSONだけを返す:
 {"reply":"日本語の短い返答(最大4行)","actions":[]}
 actions の要素:
 {"type":"create_folder","name":"フォルダ名"}
 {"type":"move","items":["K1","K2"],"folder":"フォルダ名"}  (Keepの保存アイテムを移動)
 {"type":"create_note","folder":"フォルダ名","title":"短いタイトル","body":"本文(箇条書き可・最大300字)","sources":["C1","K2"]}
-規則: 既存フォルダは同じ名前で再利用。「整理」「仕分け」ならKeepの全アイテムを内容ごとに2〜6個の短い日本語フォルダ名に分けてmove。メモ作成はポスト内容だけを根拠にし、sourcesに根拠IDを入れる。存在しないIDは使わない。質問だけならactionsは[]でreplyに答える(根拠は[C1]のように示す)。`;
+規則: 既存フォルダは同じ名前で再利用。「整理」「仕分け」ならKeepの全アイテムを内容ごとに2〜6個の短い日本語フォルダ名に分けてmove。ノート作成はポスト内容だけを根拠にし、sourcesに根拠IDを入れる。存在しないIDは使わない。質問だけならactionsは[]でreplyに答える(根拠は[C1]のように示す)。`;
 
-const SYS_ACT = `あなたはXクライアント「M3X」の画面操作エージェント。「M3X Mouse」という仮想マウスで実際の画面を操作して、ユーザーの目的を達成する。必ず次のJSONだけを返す:
+const SYS_ACT = `あなたはXクライアント「EX」の画面操作エージェント。「EX Mouse」という仮想マウスで実際の画面を操作して、ユーザーの目的を達成する。必ず次のJSONだけを返す:
 {"reply":"日本語の短い返答(最大3行)","steps":[],"done":false}
 steps の要素:
-{"type":"navigate","path":"/memo"}  (主要パス: /, /explore, /notifications, /bookmarks, /super-search, /memo, /following, /lists, /settings, /search?q=キーワード)
+{"type":"navigate","path":"/keep"}  (主要パス: /, /explore, /notifications, /super-search, /keep, /following, /lists, /settings, /search?q=キーワード)
 {"type":"click","target":"要素ID"}  (下に渡される「操作可能要素」のIDだけを使う)
 {"type":"scroll","dy":600}  (下方向が正)
 {"type":"type","target":"search","text":"検索語","submit":true}
@@ -37,7 +37,7 @@ steps の要素:
 
 const QUICK: [string, string][] = [
   ['auto_awesome', 'Keep を自動整理して'],
-  ['note_add', 'コンテキストのポストからメモを作って'],
+  ['note_add', 'コンテキストのポストからノートを作って'],
   ['summarize', 'コンテキストのポストを要約して'],
 ];
 
@@ -49,7 +49,7 @@ const thumbOf = (i: Item) => (i.media ? (i.media.type === 'photo' ? i.media.url 
 /** Compact prompt context (keeps Groq tokens low). */
 function buildContext(keep: Item[], ctx: Src[]) {
   const fs = getMemo().folders;
-  const f = fs.slice(0, 30).map((x) => `${x.name}(保存${x.items?.length || 0}/メモ${x.notes.length})`).join(', ');
+  const f = fs.slice(0, 30).map((x) => `${x.name}(保存${x.items?.length || 0}/ノート${x.notes.length})`).join(', ');
   const k = keep.slice(0, 40).map((i, n) => `K${n + 1} ${i.media ? (i.media.type === 'photo' ? '画像' : i.media.type === 'gif' ? 'GIF' : '動画') : 'ポスト'} @${i.src.handle}: ${cut(i.src.text, 70)}`).join('\n');
   const c = ctx.map((s, n) => `C${n + 1} @${s.handle}: ${cut(s.text, 240)}`).join('\n');
   return `[フォルダ] ${f || 'なし'}\n[Keep]\n${k || 'なし'}\n[コンテキスト]\n${c || 'なし'}`;
@@ -94,7 +94,7 @@ export default function Agent({ active }: { active: boolean }) {
 
   /* ================= Actions mode (screen operation) =================
      When on (or while a question is pending), send() plans structured UI
-     actions, the executor in lib/uiactions runs them with the M3X Mouse,
+     actions, the executor in lib/uiactions runs them with the EX Mouse,
      and the loop re-plans against the new screen until the AI reports
      done or asks the user a question.
      The run itself lives in the module-level store in lib/uiactions:
@@ -244,11 +244,11 @@ export default function Agent({ active }: { active: boolean }) {
           exec: () => { const to = name === 'Keep' ? KEEP : fid(name); return !!to && memo.moveItems(its.map((i: Item) => i.id), to) > 0; } });
       } else if (a.type === 'create_note') {
         const name = ensure(a.folder || 'Keep');
-        const title = String(a.title || '').trim().slice(0, 120) || '無題のメモ';
+        const title = String(a.title || '').trim().slice(0, 120) || '無題のノート';
         const body = String(a.body || '').trim().slice(0, 2000);
         const seen = new Set<string>();
         const sources = (Array.isArray(a.sources) ? a.sources : []).map(src).filter((s: Src | undefined): s is Src => !!s && !seen.has(s.id) && !!seen.add(s.id)).slice(0, MAX_SRC);
-        steps.push({ id: uid(), icon: 'note_add', run: `メモ「${cut(title, 18)}」を作成中…`, done: `メモ「${cut(title, 18)}」を作成${sources.length ? `（参照${sources.length}件）` : ''}`, state: 'wait',
+        steps.push({ id: uid(), icon: 'note_add', run: `ノート「${cut(title, 18)}」を作成中…`, done: `ノート「${cut(title, 18)}」を作成${sources.length ? `（参照${sources.length}件）` : ''}`, state: 'wait',
           exec: () => { const to = name === 'Keep' ? KEEP : fid(name); if (!to) return false; memo.addNote(to, { title, body, sources }); } });
       }
     }
@@ -275,8 +275,8 @@ export default function Agent({ active }: { active: boolean }) {
     <div className="ag-wrap">
       <div className="ag-nokey">
         <span className="ag-orb"><AgentIcon size={36} /></span>
-        <h3>M3X Agent</h3>
-        <p className="muted small">Groq の API キーを設定すると、ポストをもとにメモを作ったり、Keep を自動で整理したりできます。</p>
+        <h3>EX Agent</h3>
+        <p className="muted small">Groq の API キーを設定すると、ポストをもとにノートを作ったり、Keep を自動で整理したりできます。</p>
         <Link className="btn filled" href="/settings#ai"><Icon n="key" />設定で API キーを登録</Link>
       </div>
     </div>
@@ -288,8 +288,8 @@ export default function Agent({ active }: { active: boolean }) {
         {!msgs.length && (
           <div className="ag-hello">
             <span className="ag-orb"><AgentIcon size={34} /></span>
-            <b>M3X Agent</b>
-            <p className="muted small">ポストをここへドラッグしてコンテキストに追加（最大{MAX_CTX}件）。Keep の整理やメモ作成を頼めます。</p>
+            <b>EX Agent</b>
+            <p className="muted small">ポストをここへドラッグしてコンテキストに追加（最大{MAX_CTX}件）。Keep の整理やノート作成を頼めます。</p>
             <div className="ag-quick">{QUICK.map(([ic, t]) => <button key={t} className="chip sl" onClick={() => send(t)} disabled={busy}><Icon n={ic} s={18} />{t}</button>)}</div>
           </div>
         )}
@@ -336,7 +336,7 @@ export default function Agent({ active }: { active: boolean }) {
           </> : <span className="muted small ell">{d.over ? 'ドロップして追加' : 'ポストをドラッグしてコンテキストに追加'}</span>}
         </div>
         <form className="ag-in" onSubmit={(e) => { e.preventDefault(); send(q); }}>
-          <button type="button" className={'ag-mode' + (actMode ? ' on' : '')} onClick={() => setActMode((v) => !v)} aria-pressed={actMode} title="Actions モード：M3X Mouse が画面を操作します">
+          <button type="button" className={'ag-mode' + (actMode ? ' on' : '')} onClick={() => setActMode((v) => !v)} aria-pressed={actMode} title="Actions モード：EX Mouse が画面を操作します">
             <Icon n="mouse" s={19} /><span>Actions</span>
           </button>
           <textarea ref={ta} rows={1} value={q} onChange={(e) => setQ(e.target.value)} placeholder={actMode ? 'Actions：やりたいことを入力（例：最新のポストを Keep に入れて）' : 'Agent に頼む…（例: Keep を整理して）'} aria-label="メッセージ"

@@ -3,7 +3,7 @@ export interface XUser {
   bio?: string; location?: string; url?: string; followers: number; following: number;
   tweets: number; likes?: number; verified: boolean; isFollowing?: boolean; followsYou?: boolean; createdAt?: string;
 }
-export interface XMedia { type: 'photo' | 'video' | 'gif'; url: string; thumb?: string; w?: number; h?: number; video?: string }
+export interface XMedia { type: 'photo' | 'video' | 'gif'; url: string; thumb?: string; w?: number; h?: number; video?: string; /** dominant colour, when X provides one */ c?: string }
 export interface XCard { url: string; title?: string; desc?: string; image?: string; domain?: string }
 export interface XTweet {
   id: string; text: string; createdAt: string; user: XUser;

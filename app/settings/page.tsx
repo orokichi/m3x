@@ -22,7 +22,7 @@ function AiSettings() {
   return (
     <section className="scard" id="ai">
       <h2><span className="ms" style={{ verticalAlign: '-5px', marginRight: 6 }}>auto_awesome</span>AI（Groq Console API キー）</h2>
-      <p className="muted small" style={{ marginTop: 0 }}>登録すると「Super Search」、フォロー画面の AI 要約、メモの「M3X Agent」が使えます。キーはこの端末（localStorage）にだけ保存され、リクエストごとに送られるだけでサーバーには保存・記録されません。</p>
+      <p className="muted small" style={{ marginTop: 0 }}>登録すると「Super Search」、フォロー画面の AI 要約、Keep の「EX Agent」が使えます。キーはこの端末（localStorage）にだけ保存され、リクエストごとに送られるだけでサーバーには保存・記録されません。</p>
       <ol className="steps small">
         <li><a className="lnk" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">console.groq.com/keys</a> を開いてログイン（無料）</li>
         <li>「Create API Key」→ 名前を付けて作成し、<code>gsk_</code> で始まるキーをコピー</li>
@@ -77,8 +77,8 @@ function MemoSettings() {
   return (
     <section className="scard" id="memo">
       <label className="sw-row">
-        <div><h2 style={{ margin: 0 }}>メモ機能</h2><p className="muted small" style={{ margin: '4px 0 0' }}>右サイドバーの「日本のトレンド」を「メモ ／ M3X Agent」パネルに置き換え、ポストや画像をドラッグして Keep・メモ・Agent に追加できるようにします。メモ画面は左メニューの「メモ」からいつでも開けます。データはこの端末にだけ保存されます。</p></div>
-        <input type="checkbox" className="switch" role="switch" checked={on} onChange={(e) => setMemoOn(e.target.checked)} aria-label="メモ機能" />
+        <div><h2 style={{ margin: 0 }}>Keep パネル</h2><p className="muted small" style={{ margin: '4px 0 0' }}>右サイドバーの「日本のトレンド」を「Keep ／ EX Agent」パネルに置き換え、ポストや画像をドラッグして Keep・ノート・Agent に追加できるようにします。Keep 画面は左メニューの「Keep」からいつでも開けます。データはこの端末にだけ保存されます。</p></div>
+        <input type="checkbox" className="switch" role="switch" checked={on} onChange={(e) => setMemoOn(e.target.checked)} aria-label="Keep パネル" />
       </label>
     </section>
   );
@@ -105,7 +105,7 @@ export default function Settings() {
       <Header title="設定・ログイン" back={false} />
       <div className="pad">
         <section className="scard warn">
-          <Icon n="warning" /><div><b>注意</b><p>M3X は X の非公式（内部）API を使います。X の利用規約に反するため、アカウントが凍結・制限される可能性があります。<b>必ずサブアカウントで</b>使ってください。Cookie はこの端末のブラウザ（localStorage）にだけ保存され、サーバーには保存・記録されません。</p></div>
+          <Icon n="warning" /><div><b>注意</b><p>EX は X の非公式（内部）API を使います。X の利用規約に反するため、アカウントが凍結・制限される可能性があります。<b>必ずサブアカウントで</b>使ってください。Cookie はこの端末のブラウザ（localStorage）にだけ保存され、サーバーには保存・記録されません。</p></div>
         </section>
 
         <section className="scard">

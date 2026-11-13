@@ -51,7 +51,9 @@ function media(l: any): XMedia[] {
     const type = m.type === 'animated_gif' ? 'gif' : m.type === 'video' ? 'video' : 'photo';
     const vars = (m.video_info?.variants || []).filter((v: any) => v.content_type === 'video/mp4').sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
     const sz = m.original_info || m.sizes?.large || {};
-    return { type, url: m.media_url_https, thumb: m.media_url_https, w: sz.width || sz.w, h: sz.height || sz.h, video: vars[0]?.url };
+    const rgb = (m.ext_media_color || m.media_color || m.ext?.mediaColor?.r?.ok)?.palette?.[0]?.rgb;
+    const c = rgb && rgb.red != null ? `rgb(${rgb.red},${rgb.green},${rgb.blue})` : undefined;
+    return { type, url: m.media_url_https, thumb: m.media_url_https, w: sz.width || sz.w, h: sz.height || sz.h, video: vars[0]?.url, c };
   });
 }
 

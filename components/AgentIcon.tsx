@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * M3X Agent icon: a friendly bot face in a primary-container squircle,
+ * EX Agent icon: a friendly bot face in a primary-container squircle,
  * with an antenna dot and an M3 Expressive four-point spark.
  * All colours come from the live theme tokens (--md-*), so it follows
  * the user's theme colour / dark mode automatically.

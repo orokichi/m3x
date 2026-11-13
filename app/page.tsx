@@ -32,7 +32,7 @@ export default function Home() {
   return (
     <>
       <header className="colhead sticky">
-        <div className="ch-row show-sm"><div className="ch-t"><h1 className="brand">M3X</h1></div></div>
+        <div className="ch-row show-sm"><div className="ch-t"><h1 className="brand">EX</h1></div></div>
         <Tabs tabs={[['foryou', 'おすすめ'], ['following', 'フォロー中']]} value={tab} onChange={changeTab} />
       </header>
       {ids === null || !ready ? <Spinner />

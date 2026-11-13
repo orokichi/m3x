@@ -2,7 +2,7 @@
 import { useMouse } from '@/lib/uiactions';
 
 /**
- * M3X Mouse: the AI virtual cursor. Rendered above everything
+ * EX Mouse: the AI virtual cursor. Rendered above everything
  * (pointer-events: none), it glides with an M3 spring to wherever the
  * Agent is acting, shows a label chip describing the current action,
  * and squashes + pings when it "clicks".

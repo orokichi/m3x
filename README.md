@@ -1,4 +1,4 @@
-# M3X
+# EX（エックス）
 
 Material 3 Expressive デザインの X (Twitter) クライアント。Next.js 15 + [rettiwt-api](https://github.com/Rishikant181/Rettiwt-API)（X の内部 API）。
 
@@ -8,7 +8,7 @@ Material 3 Expressive デザインの X (Twitter) クライアント。Next.js 1
 
 1. PC のブラウザで x.com にサブアカウントでログイン
 2. F12 → Application → Cookies → `https://x.com` から `auth_token` / `ct0` / `twid` の値をコピー
-3. M3X の「設定」画面に貼って「保存して接続テスト」
+3. EX の「設定」画面に貼って「保存して接続テスト」
 
 Cookie はブラウザの localStorage にだけ保存され、リクエストごとにヘッダーで送られます（サーバーには保存・記録しません）。
 

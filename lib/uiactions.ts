@@ -3,8 +3,8 @@ import { useSyncExternalStore } from 'react';
 import { memo, KEEP, srcById } from './memo';
 
 /* =====================================================================
-   M3X Actions: structured UI actions planned by the M3X Agent and
-   executed here against the real DOM, with the "M3X Mouse" virtual
+   EX Actions: structured UI actions planned by the EX Agent and
+   executed here against the real DOM, with the "EX Mouse" virtual
    cursor animating to each target, highlighting it and performing
    the click / scroll / typing / drag for real.
    Interactive elements opt in via data-action="<kind>" plus
@@ -25,7 +25,7 @@ export interface ScreenEl { id: string; label: string; kind: string }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const esc = (s: string) => s.replace(/["\\]/g, '\\$&');
 
-/* ---------------- M3X Mouse store ---------------- */
+/* ---------------- EX Mouse store ---------------- */
 export interface MouseState { on: boolean; x: number; y: number; dur: number; label: string; press: boolean; drag: boolean }
 const MOUSE_OFF: MouseState = { on: false, x: 0, y: 0, dur: 500, label: '', press: false, drag: false };
 let mouse: MouseState = MOUSE_OFF;
@@ -77,7 +77,7 @@ function ring(el: Element) {
 /* ---------------- Actions run store ----------------
    The whole run (flow, steps, pending question) lives at module level,
    NOT in the Agent component: on narrow screens the Agent is hosted by
-   the /memo page, so a run that navigates away unmounts the Agent.
+   the /keep page, so a run that navigates away unmounts the Agent.
    Keeping the run here lets the executor loop keep writing progress,
    and a remounted Agent picks the same run (and its pending question)
    back up instead of the run silently dying with the component. */
@@ -241,7 +241,7 @@ export async function execAction(a: UiAction): Promise<ExecResult> {
       await moveTo(from.x, from.y, 'ポストをつかんで Keep へドラッグ');
       await press(true);
       const keep = document.querySelector<HTMLElement>('[data-action="folder"][data-tid="keep"]');
-      const nav = document.querySelector<HTMLElement>('[data-action="nav"][data-path="/memo"]');
+      const nav = document.querySelector<HTMLElement>('[data-action="nav"][data-path="/keep"]');
       const dest = (keep && visible(keep)) ? center(keep) : (nav && visible(nav)) ? center(nav) : { x: 84, y: window.innerHeight - 130 };
       await moveTo(dest.x, dest.y, 'ポストをつかんで Keep へドラッグ', 780);
       if (keep && visible(keep)) ring(keep); else if (nav && visible(nav)) ring(nav);
