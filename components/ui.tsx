@@ -9,6 +9,10 @@ import { MIME, MIME_MEDIA, snap, kmedia, pickMemo, useMemoOn, addCtx, useMemo2, 
 import { useGroq } from '@/lib/ai';
 import GroqMark from './GroqMark';
 import { Img, LazyVideo } from './Media';
+import { PostAiMenu, PostAiBox } from './AiTools';
+import { useVisibleReg } from '@/lib/visible';
+import type { PostKind } from '@/lib/aiPrompts';
+import { createContext, useContext } from 'react';
 
 const Lightbox = dynamic(() => import('./Lightbox'), { ssr: false });
 
@@ -118,9 +122,11 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
   const [s, setS] = useState({ liked: t.liked, likes: t.likes, rt: t.retweeted, rts: t.retweets, bm: t.bookmarked });
   const [menu, setMenu] = useState(false);
   const [smenu, setSmenu] = useState(false);
+  const [amenu, setAmenu] = useState(false);
+  const [ai, setAi] = useState<PostKind | null>(null);
   const memoOn = useMemoOn();
   const groqOn = useGroq();
-  const more = memoOn || groqOn;
+  const more = memoOn;
   const st = useMemo2();
   const kept = !!st.folders[0]?.items?.some((i) => !i.media && i.src.id === t.id);
   const bmOn = kept || s.bm;
@@ -146,7 +152,7 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
     if (navigator.share) navigator.share({ url }).catch(() => {}); else { await navigator.clipboard.writeText(url); toast('リンクをコピーしました'); }
   };
   const stop = (f: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); f(); };
-  return (
+  return (<>
     <div className={'actions' + (big ? ' big' : '')}>
       <button className="act sl c-blue" onClick={stop(() => authed() && window.dispatchEvent(new CustomEvent('m3x-compose', { detail: { replyTo: t } })))} aria-label="返信"><Icon n="chat_bubble" /><span>{fmtNum(t.replies) || ''}</span></button>
       <div className="act-wrap">
@@ -165,25 +171,32 @@ export function Actions({ t, big }: { t: XTweet; big?: boolean }) {
           {smenu && <div className="menu r" role="menu" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setSmenu(false)}>
             <button role="menuitem" onClick={() => { setSmenu(false); share(); }}><Icon n="ios_share" />共有・リンクをコピー</button>
             <button role="menuitem" onClick={() => { setSmenu(false); pickMemo(snap(t)); }}><Icon n="bookmarks" />Keep・フォルダに追加</button>
-            {groqOn && <button role="menuitem" onClick={() => { setSmenu(false); if (addCtx(snap(t))) window.dispatchEvent(new Event('m3x-open-agent')); }}><span className="ms" style={{ display: 'grid', placeItems: 'center', width: 24 }}><GroqMark compact size={18} /></span>Groq に追加</button>}
           </div>}
         </div>
+        {groqOn && <div className="act-wrap">
+          <button className={'act sl c-primary ai-act' + (ai ? ' on' : '')} onClick={stop(() => setAmenu(!amenu))} aria-label="Groq" title="Groq（要約・翻訳・解説など）" aria-haspopup="menu" aria-expanded={amenu}><GroqMark compact size={18} mono={!ai} /></button>
+          {amenu && <div className="menu r" role="menu" onClick={(e) => e.stopPropagation()} onMouseLeave={() => setAmenu(false)}>
+            <PostAiMenu onPick={(k) => { setAmenu(false); setAi(k); }} onCtx={() => { setAmenu(false); if (addCtx(snap(t))) window.dispatchEvent(new Event('m3x-open-agent')); }} />
+          </div>}
+        </div>}
       </div>
     </div>
-  );
+    {ai && groqOn && <PostAiBox key={ai} t={t} kind={ai} onClose={() => setAi(null)} />}
+  </>);
 }
 
 export function TweetCard({ t, thread }: { t: XTweet; thread?: boolean }) {
   const router = useRouter();
   const go = () => { if (!window.getSelection()?.toString()) router.push(`/status/${t.id}`); };
   const memoOn = useMemoOn();
+  const vref = useVisibleReg<HTMLElement>(t);
   const drag = (e: React.DragEvent) => {
     e.dataTransfer.setData(MIME, JSON.stringify(snap(t)));
     e.dataTransfer.setData('text/uri-list', `https://x.com/${t.user.handle}/status/${t.id}`);
     e.dataTransfer.effectAllowed = 'copy';
   };
   return (
-    <article className={'tweet' + (thread ? ' thread' : '') + (memoOn ? ' dragga' : '')} onClick={go} draggable={memoOn || undefined} onDragStart={memoOn ? drag : undefined}
+    <article ref={vref} className={'tweet' + (thread ? ' thread' : '') + (memoOn ? ' dragga' : '')} onClick={go} draggable={memoOn || undefined} onDragStart={memoOn ? drag : undefined}
      >
       {t.rtBy && <div className="rt-by"><Icon n="repeat" s={16} /><Link href={`/u/${t.rtBy.handle}`} onClick={(e) => e.stopPropagation()}>{t.rtBy.name}さんがリポスト</Link></div>}
       <div className="tw-body">
@@ -261,6 +274,10 @@ function patchSnapScroll(k: string, y: number) {
   try { const v = sessionStorage.getItem(k); if (!v) return; const s = JSON.parse(v); if (s && Array.isArray(s.items)) { s.scrollY = y; sessionStorage.setItem(k, JSON.stringify(s)); } } catch { /* ignore */ }
 }
 
+/** When a Feed renders inside its own scroll container (deck column), it uses that
+    element as IntersectionObserver root and skips window scroll snapshots. */
+export const FeedScope = createContext<HTMLElement | null>(null);
+
 /** Infinite-scroll feed of any cursored op. */
 export function Feed<T>({ op, args, render, empty, keyOf }: { op: string; args?: Record<string, any>; render: (item: T) => React.ReactNode; empty?: string; keyOf: (t: T) => string }) {
   const [items, setItems] = useState<T[]>([]);
@@ -275,6 +292,7 @@ export function Feed<T>({ op, args, render, empty, keyOf }: { op: string; args?:
   const firstRun = useRef(true);
   const pendingScroll = useRef<number | null>(null);
   const scrollYRef = useRef(0);
+  const scope = useContext(FeedScope);
 
   const load = useCallback(async (cursor?: string, reset?: boolean) => {
     if (busy.current) return; busy.current = true; setLoading(true); setErr(null);
@@ -295,6 +313,7 @@ export function Feed<T>({ op, args, render, empty, keyOf }: { op: string; args?:
   useEffect(() => {
     if (firstRun.current) {
       firstRun.current = false;
+      if (scope) { setItems([]); setNext(undefined); setDone(false); load(undefined, true); return; }
       const s = readSnap<T>(fkey);
       const back = Date.now() - lastPopAt < 2000;
       if (s && s.items.length && (back || Date.now() - s.ts < 3 * 60 * 1000)) {
@@ -310,11 +329,12 @@ export function Feed<T>({ op, args, render, empty, keyOf }: { op: string; args?:
 
   /* Persist items/cursor as they change (scroll offset is patched separately). */
   useEffect(() => {
-    if (items.length) writeSnap(fkey, { items: items.slice(0, 60), next, done, scrollY: scrollYRef.current, ts: Date.now() });
+    if (items.length && !scope) writeSnap(fkey, { items: items.slice(0, 60), next, done, scrollY: scrollYRef.current, ts: Date.now() });
   }, [items, next, done, fkey]);
 
   /* Track the scroll offset for this feed and keep the snapshot in sync. */
   useEffect(() => {
+    if (scope) return;
     let raf = 0;
     const onScroll = () => {
       scrollYRef.current = window.scrollY;
@@ -322,7 +342,7 @@ export function Feed<T>({ op, args, render, empty, keyOf }: { op: string; args?:
     };
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => { window.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); patchSnapScroll(fkey, window.scrollY); };
-  }, [fkey]);
+  }, [fkey, scope]);
 
   /* Apply the pending scroll restore once the seeded items have painted. */
   useEffect(() => {
@@ -333,9 +353,9 @@ export function Feed<T>({ op, args, render, empty, keyOf }: { op: string; args?:
 
   useEffect(() => {
     const el = sentinel.current; if (!el) return;
-    const io = new IntersectionObserver((es) => { if (es[0].isIntersecting && next && !done && !busy.current && !err) load(next); }, { rootMargin: '1200px' });
+    const io = new IntersectionObserver((es) => { if (es[0].isIntersecting && next && !done && !busy.current && !err) load(next); }, { root: scope, rootMargin: '1200px' });
     io.observe(el); return () => io.disconnect();
-  }, [next, done, err, load]);
+  }, [next, done, err, load, scope]);
 
   return (
     <div>

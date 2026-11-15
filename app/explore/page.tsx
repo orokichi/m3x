@@ -1,11 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { x, fmtNum } from '@/lib/api';
+import { x } from '@/lib/api';
 import { useGroq } from '@/lib/ai';
 import { ErrorBox, Icon, Spinner } from '@/components/ui';
 import { SearchBar } from '@/components/SearchBar';
 import type { XTrend } from '@/lib/types';
+import { TrendRow } from '@/components/Trends';
 
 const EXAMPLES = ['最近1週間で話題になった生成AIのニュース', '@Nintendo の新作発表で画像つきのポスト', '天気・地震に関する速報'];
 
@@ -25,11 +26,7 @@ export default function Explore() {
       <h2 className="sec-h">日本のトレンド</h2>
       {err && <ErrorBox e={err} />}
       {!t && !err && <Spinner />}
-      {t?.map((tr, i) => (
-        <Link key={tr.name} href={`/search?q=${encodeURIComponent(tr.query)}`} className="trend sl">
-          <span className="muted small">{i + 1} · 日本のトレンド</span><b>{tr.name}</b>{tr.volume && <span className="muted small">{fmtNum(tr.volume)}件のポスト</span>}
-        </Link>
-      ))}
+      {t?.map((tr, i) => <TrendRow key={tr.name} t={tr} i={i} label="日本のトレンド" />)}
     </>
   );
 }

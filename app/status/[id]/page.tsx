@@ -5,6 +5,7 @@ import { x, fmtFull, fmtNum } from '@/lib/api';
 import { Actions, Avatar, ErrorBox, Feed, Header, MediaGrid, RichText, Spinner, TweetCard, Verified, FollowBtn } from '@/components/ui';
 import { compose, useMe } from '@/components/Shell';
 import type { XTweet } from '@/lib/types';
+import { ThreadSummary } from '@/components/AiTools';
 
 export default function Status({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -37,6 +38,7 @@ export default function Status({ params }: { params: Promise<{ id: string }> }) 
           </div>
           <Actions t={t} big />
         </article>
+        <ThreadSummary t={t} parents={d!.parents} />
         {authed ? <>
           <button className="reply-bar sl" onClick={() => compose({ replyTo: t })}><span className="muted">返信をポスト</span><span className="btn filled sm">返信</span></button>
           <Feed<XTweet> op="replies" args={{ id }} keyOf={(r) => r.id} render={(r) => <TweetCard t={r} />} empty="まだ返信はありません" />

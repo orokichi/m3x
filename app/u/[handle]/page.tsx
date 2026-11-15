@@ -5,6 +5,7 @@ import { x, fmtNum, img } from '@/lib/api';
 import { Avatar, ErrorBox, Feed, FollowBtn, Header, Icon, Spinner, Tabs, TweetCard, Verified, RichText } from '@/components/ui';
 import { useMe } from '@/components/Shell';
 import type { XTweet, XUser } from '@/lib/types';
+import { ProfileInsight } from '@/components/AiTools';
 
 export default function Profile({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = use(params);
@@ -39,6 +40,7 @@ export default function Profile({ params }: { params: Promise<{ handle: string }
             <Link href={`/u/${u.handle}/followers`}><b>{fmtNum(u.followers)}</b> <span className="muted">フォロワー</span></Link>
           </div>
         </div>
+        <ProfileInsight key={u.id} u={u} />
         <div className="sticky-tabs"><Tabs tabs={tabs} value={tab} onChange={setTab} /></div>
         {tab === 'media'
           ? <Feed<XTweet> op="utweets" args={{ id: u.id, tab }} keyOf={(t) => t.id} render={(t) => <TweetCard t={t} />} empty="メディアはありません" />

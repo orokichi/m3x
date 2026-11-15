@@ -4,21 +4,25 @@ import { usePathname, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { applyTheme } from '@/lib/themeStore';
-import { x, getCreds, shrink, toast, fmtNum } from '@/lib/api';
-import type { XTweet, XUser, XTrend } from '@/lib/types';
+import { x, getCreds, shrink, toast } from '@/lib/api';
+import type { XTweet, XUser } from '@/lib/types';
 import { Avatar, Icon, RichText } from './ui';
-import { useMemoOn, type Src } from '@/lib/memo';
+import { type Src } from '@/lib/memo';
+import { useDeck, DECK_MIN } from '@/lib/deck';
+import { ComposeAssist } from './AiTools';
 
 const SidePanel = dynamic(() => import('./SidePanel'), { ssr: false, loading: () => <div className="sp sp-skel" /> });
+const TrendsPanel = dynamic(() => import('./Trends'), { ssr: false, loading: () => <div className="tp sp-skel" /> });
+const Deck = dynamic(() => import('./Deck'), { ssr: false, loading: () => <div className="deck" /> });
 const MemoPicker = dynamic(() => import('./Memo'), { ssr: false });
 
 const Me = createContext<{ me: XUser | null; authed: boolean; ready: boolean }>({ me: null, authed: false, ready: false });
 export const useMe = () => useContext(Me);
 
-export function compose(detail: { replyTo?: XTweet; quote?: XTweet } = {}) { window.dispatchEvent(new CustomEvent('m3x-compose', { detail })); }
+export function compose(detail: { replyTo?: XTweet; quote?: XTweet; text?: string } = {}) { window.dispatchEvent(new CustomEvent('m3x-compose', { detail })); }
 
-function Composer({ me, onClose, replyTo, quote }: { me: XUser | null; onClose: () => void; replyTo?: XTweet; quote?: XTweet }) {
-  const [text, setText] = useState('');
+function Composer({ me, onClose, replyTo, quote, text: init }: { me: XUser | null; onClose: () => void; replyTo?: XTweet; quote?: XTweet; text?: string }) {
+  const [text, setText] = useState(init || '');
   const [imgs, setImgs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
@@ -48,6 +52,7 @@ function Composer({ me, onClose, replyTo, quote }: { me: XUser | null; onClose: 
           <Avatar u={me || undefined} />
           <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder={replyTo ? '返信をポスト' : quote ? 'コメントを追加' : 'いまどうしてる？'} rows={4} />
         </div>
+        <ComposeAssist text={text} setText={setText} replyTo={replyTo} />
         {!!imgs.length && <div className="cimgs">{imgs.map((s, i) => <div key={i}><img src={s} alt="" /><button className="icon-btn" onClick={() => setImgs(imgs.filter((_, j) => j !== i))}><Icon n="close" s={18} /></button></div>)}</div>}
         {quote && <div className="quote" style={{ marginLeft: 52 }}><div className="qhead"><Avatar u={quote.user} size={20} /><b>{quote.user.name}</b><span className="muted">@{quote.user.handle}</span></div><div className="qtext clamp3"><RichText t={quote} /></div></div>}
         <div className="ctools">
@@ -62,37 +67,37 @@ function Composer({ me, onClose, replyTo, quote }: { me: XUser | null; onClose: 
   );
 }
 
-function RightBar({ path, memo }: { path: string; memo: boolean }) {
-  const [wide, setWide] = useState(false);
-  useEffect(() => { const mq = window.matchMedia('(min-width: 1061px)'); const f = () => setWide(mq.matches); f(); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f); }, []);
-  const isMemo = path.startsWith('/keep');
-  if (memo || isMemo) return <aside className="rightbar memo-mode">{wide && <SidePanel agentOnly={isMemo} />}</aside>;
-  return <Trends path={path} />;
+/** Media-query hook (client only; false on the server). */
+export function useMQ(q: string) {
+  const [m, setM] = useState(false);
+  useEffect(() => { const mq = window.matchMedia(q); const f = () => setM(mq.matches); f(); mq.addEventListener('change', f); return () => mq.removeEventListener('change', f); }, [q]);
+  return m;
 }
 
-function Trends({ path }: { path: string }) {
-  const [trends, setTrends] = useState<XTrend[] | null>(null);
+function SearchBox() {
   const [q, setQ] = useState('');
   const router = useRouter();
-  useEffect(() => { x<XTrend[]>('trends').then(setTrends).catch(() => setTrends([])); }, []);
   return (
-    <aside className="rightbar">
-      <form className="sbox" onSubmit={(e) => { e.preventDefault(); if (q.trim()) router.push(`/search?q=${encodeURIComponent(q.trim())}`); }}>
-        <Icon n="search" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="検索" aria-label="検索" data-action="search" data-label="検索ボックス" />
-      </form>
-      {!path.startsWith('/explore') && <section className="rcard">
-        <h2>日本のトレンド</h2>
-        {trends === null && <div className="muted small" style={{ padding: 16 }}>読み込み中…</div>}
-        {trends?.slice(0, 10).map((t, i) => (
-          <Link key={t.name} href={`/search?q=${encodeURIComponent(t.query)}`} className="trend sl">
-            <span className="muted small">{i + 1} · トレンド</span><b>{t.name}</b>{t.volume && <span className="muted small">{fmtNum(t.volume)}件のポスト</span>}
-          </Link>
-        ))}
-        <Link href="/explore" className="trend sl lnk">さらに表示</Link>
-      </section>}
-      <footer className="muted small" style={{ padding: '0 16px' }}>EX · 非公式クライアント（X Corp. とは無関係）</footer>
-    </aside>
+    <form className="sbox" onSubmit={(e) => { e.preventDefault(); if (q.trim()) router.push(`/search?q=${encodeURIComponent(q.trim())}`); }}>
+      <Icon n="search" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="検索" aria-label="検索" />
+    </form>
   );
+}
+
+/** Persistent right column on desktop: Trends / Keep / Groq. ≥1760px splits trends into its own column. */
+function RightBar({ path, deckOn }: { path: string; deckOn?: boolean }) {
+  const on = useMQ('(min-width: 1061px)');
+  const split = useMQ('(min-width: 1760px)');
+  const isKeep = path.startsWith('/keep');
+  const isSearch = path.startsWith('/explore') || path.startsWith('/search');
+  const foot = <footer className="muted small rb-foot">Xplore（エクスプロア） · 非公式クライアント（X Corp. とは無関係）</footer>;
+  if (!on) return <aside className="rightbar" aria-hidden />;
+  if (isKeep) return <aside className="rightbar panel-mode"><SidePanel agentOnly />{foot}</aside>;
+  if (split && !deckOn) return <>
+    <aside className="rightbar panel-mode"><SidePanel pages={['keep', 'groq']} />{foot}</aside>
+    <aside className="rightbar2">{!isSearch && <SearchBox />}<div className="rcard tcard"><TrendsPanel /></div></aside>
+  </>;
+  return <aside className="rightbar panel-mode">{!isSearch && <SearchBox />}<SidePanel pages={['trends', 'keep', 'groq']} />{foot}</aside>;
 }
 
 const NAV = [
@@ -109,10 +114,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<XUser | null>(null);
   const [authed, setAuthed] = useState(false);
   const [ready, setReady] = useState(false);
-  const [comp, setComp] = useState<null | { replyTo?: XTweet; quote?: XTweet }>(null);
+  const [comp, setComp] = useState<null | { replyTo?: XTweet; quote?: XTweet; text?: string }>(null);
   const [toasts, setToasts] = useState<{ id: number; m: string }[]>([]);
   const [pick, setPick] = useState<Src | null>(null);
-  const memo = useMemoOn();
+  const d = useDeck();
+  const deckWide = useMQ(`(min-width: ${DECK_MIN}px)`);
+  const deckOn = d.on && deckWide && path === '/';
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -133,9 +140,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <Me.Provider value={{ me, authed, ready }}>
-      <div className="layout">
+      <div className={'layout' + (deckOn ? ' deck-on' : '')}>
         <nav className="leftnav">
-          <Link href="/" className="logo-x" aria-label="EX"><span className="lm">X</span><span className="lt">EX</span></Link>
+          <Link href="/" className="logo-x" aria-label="Xplore（エクスプロア）"><span className="lm">X</span><span className="lt">Xplore</span></Link>
           {nav.map(([h, ic, label]) => (
             <Link key={h} href={href(h)} className={'nav-i' + (on(h) ? ' on' : '')}><span className="pill"><Icon n={ic} fill={on(h)} /></span><span className="nl">{label}</span></Link>
           ))}
@@ -144,8 +151,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           {me ? <Link href={`/u/${me.handle}`} className="me-card sl"><Avatar u={me} /><div className="nl ur-t"><b className="ell">{me.name}</b><span className="muted ell">@{me.handle}</span></div></Link>
             : ready && <div className="me-card"><span className="av ph" style={{ width: 40, height: 40 }}><Icon n="visibility" /></span><div className="nl ur-t"><b>ゲストモード</b><span className="muted small">ログインなしで閲覧中</span></div></div>}
         </nav>
-        <main className="center">{children}</main>
-        <RightBar path={path} memo={memo} />
+        {deckOn ? <main className="deck-main"><Deck authed={authed} /></main> : <main className="center">{children}</main>}
+        <RightBar path={path} deckOn={deckOn} />
       </div>
       <nav className="bottomnav">
         {(authed ? nav.filter(([h]) => MOBILE_AUTHED.has(h)) : nav).map(([h, ic, label]) => (

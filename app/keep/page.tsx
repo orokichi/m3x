@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Header, Spinner } from '@/components/ui';
 
 const MemoExplorer = dynamic(() => import('@/components/Memo').then((m) => m.MemoExplorer), { ssr: false, loading: () => <Spinner /> });
+const KeepAi = dynamic(() => import('@/components/KeepAi'), { ssr: false });
 const SidePanel = dynamic(() => import('@/components/SidePanel'), { ssr: false, loading: () => <Spinner /> });
 
 /** Full page: browse/review all folders, Keep and notes. Narrow screens also get the Agent page (swipe). */
@@ -13,6 +14,7 @@ export default function KeepPage() {
   return (
     <>
       <Header title="Keep" back={false} />
+      <KeepAi />
       {wide === null ? null : wide ? <div className="memo-page"><MemoExplorer page /></div> : <div className="memo-page"><SidePanel page /></div>}
     </>
   );

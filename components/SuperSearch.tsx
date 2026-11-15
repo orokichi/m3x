@@ -5,12 +5,15 @@ import { Icon, TweetCard } from '@/components/ui';
 import { AiText } from '@/components/AiText';
 import { x, getFollows, toast } from '@/lib/api';
 import { groq, parseJson, compact } from '@/lib/ai';
+import Link from 'next/link';
+import { runJob } from '@/lib/aiTasks';
+import { followUpsJob, parseNext } from '@/lib/aiPrompts';
 import type { XTweet, Page } from '@/lib/types';
 
 /* AI search (merged former Super Search): plan with the small model → fetch → re-rank/group → summary card. */
 
 interface Plan { query?: string; keywords?: string[]; accounts?: string[]; since?: string | null; min_faves?: number; media?: boolean; lang?: string | null; sort?: string }
-interface Sum { title?: string; tldr?: string; points?: { t: string; refs?: number[] }[]; top?: number[]; off?: number[] }
+interface Sum { title?: string; tldr?: string; points?: { t: string; refs?: number[] }[]; top?: number[]; off?: number[]; next?: string[] }
 
 const PLAN_SYS = (today: string) => `X検索クエリ生成器。要望を次のJSONだけで返す。
 {"query":"X検索演算子を含む検索文字列","keywords":["本文に出そうな語・同義語(最大6)"],"accounts":["関係アカウント(@なし,分かる時のみ)"],"since":"YYYY-MM-DD|null","min_faves":0,"media":false,"lang":"ja|en|null","sort":"top|latest"}
@@ -18,7 +21,7 @@ const PLAN_SYS = (today: string) => `X検索クエリ生成器。要望を次の
 今日は${today}。「最近」=7日前、「今日」=今日をsinceに。`;
 
 const SUM_SYS = `Xのポスト一覧だけを根拠に、要望への要約を日本語JSONだけで返す。
-{"title":"15字以内の見出し","tldr":"2〜3文の要点","points":[{"t":"30字以内の要点","refs":[番号]}],"top":[最も関連する番号を最大3],"off":[要望と無関係な番号]}
+{"title":"15字以内の見出し","tldr":"2〜3文の要点","points":[{"t":"30字以内の要点","refs":[番号]}],"top":[最も関連する番号を最大3],"off":[要望と無関係な番号],"next":["次に試すと良い検索の要望文(各25字以内,最大3,元の要望と重複しない)"]}
 pointsは最大4。一覧にない情報は書かない。該当が薄ければtldrでそう述べる。`;
 
 const ASK_SYS = '与えられたXのポスト一覧だけを根拠に、追加の質問へ日本語で簡潔に答える（最大4行）。根拠は [番号] で引用。一覧にない情報は推測しない。';
@@ -93,6 +96,7 @@ export default function SuperSearch({ q }: { q: string }) {
   const [ask, setAsk] = useState('');
   const [qa, setQa] = useState<{ q: string; a: string }[]>([]);
   const [asking, setAsking] = useState(false);
+  const [next, setNext] = useState<string[]>([]);
   const started = useRef(false);
 
   useEffect(() => {
@@ -122,6 +126,9 @@ export default function SuperSearch({ q }: { q: string }) {
         const s = parseJson<Sum>(await groq([{ role: 'system', content: SUM_SYS }, { role: 'user', content: `要望: ${q}\n\nポスト:\n${compact(list, CAP, 110)}` }], { tier: 'large', max: 420, json: true, temperature: 0.2 }));
         setSum(s || { tldr: '要約を生成できませんでした。' });
         setStage('done');
+        const nx = (Array.isArray(s?.next) ? s!.next : []).map((v) => String(v || '').trim()).filter((v) => v && v !== q).slice(0, 3);
+        if (nx.length) setNext(nx);
+        else if (s?.tldr) runJob(followUpsJob(q, s.tldr)).then((o) => setNext(parseNext(o).filter((v) => v !== q))).catch(() => {});
       } catch (e: any) { setErr(e.message); setStage('done'); }
     })();
   }, [ready, authed, q]);
@@ -155,8 +162,10 @@ export default function SuperSearch({ q }: { q: string }) {
             <span className="as-kick">AI 要約</span>
             {loading ? <i className="sk sk-t" /> : <h2>{err ? 'エラー' : sum?.title || q}</h2>}
           </div>
-          {!loading && sum && <button type="button" className="icon-btn" onClick={copy} aria-label="要約をコピー" title="コピー"><Icon n="content_copy" s={20} /></button>}
-          <button type="button" className="icon-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label={open ? '折りたたむ' : '展開する'}><Icon n={open ? 'expand_less' : 'expand_more'} /></button>
+          <div className="as-acts">
+            {!loading && sum && <button type="button" className="icon-btn" onClick={copy} aria-label="要約をコピー" title="コピー"><Icon n="content_copy" s={20} /></button>}
+            <button type="button" className="icon-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label={open ? '折りたたむ' : '展開する'} title={open ? '折りたたむ' : '展開する'}><Icon n={open ? 'expand_less' : 'expand_more'} /></button>
+          </div>
         </div>
         {open && <div className="as-body">
           {loading ? <>
@@ -167,6 +176,7 @@ export default function SuperSearch({ q }: { q: string }) {
             {sum.tldr && <p className="as-tldr">{sum.tldr}</p>}
             {!!sum.points?.length && <ul className="as-pts">{sum.points.slice(0, 4).map((p, i) => <li key={i}><span className="as-dot" /><span className="as-pt">{p.t}</span><Cites refs={p.refs} max={posts.length} /></li>)}</ul>}
             {qa.map((m, i) => <div key={i} className="as-qa"><div className="ai-msg user">{m.q}</div>{m.a ? <div className="ai-msg assistant"><AiText text={m.a} anchor="as" /></div> : <div className="as-skel sm"><i className="sk" /><i className="sk" style={{ width: '70%' }} /></div>}</div>)}
+            {!!next.length && <div className="as-next"><span className="as-kick">次に探す</span><div className="chips wrap">{next.map((n) => <Link key={n} className="chip" href={`/search?q=${encodeURIComponent(n)}&f=ai`}><Icon n="travel_explore" s={18} />{n}</Link>)}</div></div>}
             {!!posts.length && <form className="ai-ask as-ask" onSubmit={(e) => { e.preventDefault(); followUp(); }}>
               <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="この結果について質問…" aria-label="追加の質問" />
               <button className="icon-btn filled" type="submit" disabled={asking || !ask.trim()} aria-label="送信">{asking ? <Morph s={20} /> : <Icon n="arrow_upward" s={20} />}</button>

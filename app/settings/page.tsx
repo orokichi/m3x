@@ -7,6 +7,7 @@ import type { XUser } from '@/lib/types';
 import { getGroqKey, setGroqKey, groq } from '@/lib/ai';
 import { useMemoOn, setMemoOn } from '@/lib/memo';
 import { PRESETS, useSeedPref, setSeedPref } from '@/lib/themeStore';
+import { useDeck, deck, DECK_MIN, colTitle } from '@/lib/deck';
 
 function AiSettings() {
   const [k, setK] = useState('');
@@ -22,7 +23,7 @@ function AiSettings() {
   return (
     <section className="scard" id="ai">
       <h2><span className="ms" style={{ verticalAlign: '-5px', marginRight: 6 }}>auto_awesome</span>AI（Groq Console API キー）</h2>
-      <p className="muted small" style={{ marginTop: 0 }}>登録すると検索の「AI 検索」、フォロー画面の AI 要約、Keep の「Groq」が使えます。キーはこの端末（localStorage）にだけ保存され、リクエストごとに送られるだけでサーバーには保存・記録されません。</p>
+      <p className="muted small" style={{ marginTop: 0 }}>登録すると、AI 検索（次の検索の提案つき）、右カラムの Groq（表示中のポストについて質問）、ポストごとの要約・翻訳・解説・ファクトチェック観点・返信案、スレッド要約、「ここまでの要約」、トレンドの「なぜ話題?」、投稿の校正・トーン変更・字数調整・ハッシュタグ提案、プロフィール分析、Keep への質問とフォルダ分け提案が使えます。投稿・いいね・フォローを AI が勝手に行うことはありません。キーはこの端末（localStorage）にだけ保存され、リクエストごとに送られるだけでサーバーには保存・記録されません。</p>
       <ol className="steps small">
         <li><a className="lnk" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">console.groq.com/keys</a> を開いてログイン（無料）</li>
         <li>「Create API Key」→ 名前を付けて作成し、<code>gsk_</code> で始まるキーをコピー</li>
@@ -72,13 +73,31 @@ function ThemeSettings() {
   );
 }
 
+function DeckSettings() {
+  const d = useDeck();
+  return (
+    <section className="scard" id="deck">
+      <label className="sw-row">
+        <div><h2 style={{ margin: 0 }}><span className="ms" style={{ verticalAlign: '-5px', marginRight: 6 }}>view_column</span>マルチカラム（デッキ）表示</h2>
+          <p className="muted small" style={{ margin: '4px 0 0' }}>画面幅 {DECK_MIN}px 以上のパソコンで、ホームを TweetDeck のような複数カラムにします。カラム（ホーム・フォロー中・検索・リスト・ユーザー・通知・Keep）は右端の「カラムを追加」から追加・並べ替え・削除できます。</p></div>
+        <input type="checkbox" className="switch" role="switch" checked={d.on} onChange={(e) => deck.setOn(e.target.checked)} aria-label="マルチカラム表示" />
+      </label>
+      {d.on && <div style={{ marginTop: 12 }}>
+        <div className="muted small" style={{ marginBottom: 6 }}>カラムの幅</div>
+        <div className="bgroup">{[[320, '狭い'], [380, '標準'], [440, '広い']].map(([w, l]) => <button key={w} className={'btn sm' + ((d.width || 380) === w ? ' on' : '')} onClick={() => deck.setWidth(w as number)}>{l}</button>)}</div>
+        <p className="muted small" style={{ marginBottom: 0 }}>現在 {d.cols.length} カラム: {d.cols.map(colTitle).join('、')}</p>
+      </div>}
+    </section>
+  );
+}
+
 function MemoSettings() {
   const on = useMemoOn();
   return (
     <section className="scard" id="memo">
       <label className="sw-row">
-        <div><h2 style={{ margin: 0 }}>Keep パネル</h2><p className="muted small" style={{ margin: '4px 0 0' }}>右サイドバーの「日本のトレンド」を「Keep ／ Groq」パネルに置き換え、ポストや画像をドラッグして Keep・ノート・Groq に追加できるようにします。Keep 画面は左メニューの「Keep」からいつでも開けます。データはこの端末にだけ保存されます。</p></div>
-        <input type="checkbox" className="switch" role="switch" checked={on} onChange={(e) => setMemoOn(e.target.checked)} aria-label="Keep パネル" />
+        <div><h2 style={{ margin: 0 }}>ドラッグで Keep・Groq に追加</h2><p className="muted small" style={{ margin: '4px 0 0' }}>パソコンでは右カラムに「トレンド ／ Keep ／ Groq」パネルが常に表示されます。オンにすると、ポストや画像・動画をそのパネルへドラッグして Keep・ノート・Groq に追加できます。Keep 画面は左メニューの「Keep」からいつでも開けます。データはこの端末にだけ保存されます。</p></div>
+        <input type="checkbox" className="switch" role="switch" checked={on} onChange={(e) => setMemoOn(e.target.checked)} aria-label="ドラッグで Keep・Groq に追加" />
       </label>
     </section>
   );
@@ -105,7 +124,7 @@ export default function Settings() {
       <Header title="設定・ログイン" back={false} />
       <div className="pad">
         <section className="scard warn">
-          <Icon n="warning" /><div><b>注意</b><p>EX は X の非公式（内部）API を使います。X の利用規約に反するため、アカウントが凍結・制限される可能性があります。<b>必ずサブアカウントで</b>使ってください。Cookie はこの端末のブラウザ（localStorage）にだけ保存され、サーバーには保存・記録されません。</p></div>
+          <Icon n="warning" /><div><b>注意</b><p>Xplore は X の非公式（内部）API を使います。X の利用規約に反するため、アカウントが凍結・制限される可能性があります。<b>必ずサブアカウントで</b>使ってください。Cookie はこの端末のブラウザ（localStorage）にだけ保存され、サーバーには保存・記録されません。</p></div>
         </section>
 
         <section className="scard">
@@ -140,6 +159,7 @@ export default function Settings() {
 
         <ThemeSettings />
         <AiSettings />
+        <DeckSettings />
         <MemoSettings />
 
         <section className="scard">

@@ -1,10 +1,15 @@
-// Prints the Material Symbols names used in the source (for ICONS in app/layout.tsx).
-// Usage: node scripts/icons.mjs
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-const res = await fetch('https://raw.githubusercontent.com/google/material-design-icons/master/variablefont/MaterialSymbolsRounded%5BFILL%2CGRAD%2Copsz%2Cwght%5D.codepoints');
-const all = new Set((await res.text()).split('\n').map((l) => l.split(' ')[0]).filter(Boolean));
-const tokens = new Set();
-const walk = (d) => readdirSync(d).forEach((f) => { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else if (/\.tsx?$/.test(f)) for (const m of readFileSync(p, 'utf8').matchAll(/[a-z][a-z0-9_]+/g)) tokens.add(m[0]); });
-['app', 'components', 'lib'].forEach(walk);
-console.log([...tokens].filter((t) => all.has(t)).sort().join(','));
+// Regenerates ICONS in app/layout.tsx from the Material Symbols names used in the source.
+// Usage: node scripts/icons.mjs            (uses the vendored scripts/symbols.txt)
+//        node scripts/icons.mjs --refresh  (re-downloads the official codepoints list first)
+import { readFileSync, writeFileSync } from 'node:fs';
+import { usedIcons, LAYOUT, SYMBOLS } from './icon-lib.mjs';
+if (process.argv.includes('--refresh')) {
+  const res = await fetch('https://raw.githubusercontent.com/google/material-design-icons/master/variablefont/MaterialSymbolsRounded%5BFILL%2CGRAD%2Copsz%2Cwght%5D.codepoints');
+  const names = [...new Set((await res.text()).split('\n').map((l) => l.split(' ')[0]).filter(Boolean))].sort();
+  writeFileSync(SYMBOLS, names.join('\n') + '\n');
+}
+const list = usedIcons().join(',');
+const src = readFileSync(LAYOUT, 'utf8');
+const out = src.replace(/const ICONS = '[^']*';/, `const ICONS = '${list}';`);
+writeFileSync(LAYOUT, out);
+console.log(`${list.split(',').length} icons → app/layout.tsx${out === src ? ' (unchanged)' : ''}`);

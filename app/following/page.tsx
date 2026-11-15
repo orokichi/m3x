@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMe } from '@/components/Shell';
 import { Avatar, Feed, Header, Icon, TweetCard } from '@/components/ui';
 import { AiText } from '@/components/AiText';
+import { DigestButton } from '@/components/AiTools';
 import { x, getFollows, img } from '@/lib/api';
 import { groq, compact, useGroq, type Msg } from '@/lib/ai';
 import type { XTweet, XUser, Page } from '@/lib/types';
@@ -77,7 +78,7 @@ export default function Following() {
 
   return (
     <>
-      <Header title="フォロー" sub={accs ? `${accs.length}${accs.length >= 40 && authed ? '+' : ''} アカウント${authed ? '' : '（この端末に保存）'}` : undefined} back={false} />
+      <Header title={<div className="row-flex" style={{ minWidth: 0 }}><h1 style={{ flex: 1 }}>フォロー</h1><DigestButton /></div>} sub={accs ? `${accs.length}${accs.length >= 40 && authed ? '+' : ''} アカウント${authed ? '' : '（この端末に保存）'}` : undefined} back={false} />
       {accs && !!accs.length && <div className="fchips" role="list">{accs.map((a) => (
         <Link key={a.id} role="listitem" href={`/u/${a.handle}`} className="fchip sl" title={`${a.name} @${a.handle}`}>
           {a.avatar ? <img className="av" src={img(a.avatar)} alt="" width={28} height={28} referrerPolicy="no-referrer" loading="lazy" /> : <Avatar size={28} />}

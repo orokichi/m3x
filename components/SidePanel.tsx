@@ -4,9 +4,11 @@ import { MemoExplorer } from './Memo';
 import Agent from './Agent';
 import GroqMark from './GroqMark';
 import { Icon } from './ui';
+import TrendsPanel from './Trends';
 
-const PK = 'm3x.panelPage', TK = 'm3x.tut.panel';
-const PAGES: [string, string][] = [['bookmarks', 'Keep'], ['smart_toy', 'Groq']];
+const PK = 'm3x.panelKey', TK = 'm3x.tut.panel2';
+export type PanelKey = 'trends' | 'keep' | 'groq';
+const META: Record<PanelKey, [string, string]> = { trends: ['trending_up', 'トレンド'], keep: ['bookmarks', 'Keep'], groq: ['smart_toy', 'Groq'] };
 
 /** Critically-under-damped spring (M3 Expressive "spatial" feel), driven by rAF. */
 function useSpring(apply: (p: number) => void) {
@@ -29,26 +31,28 @@ function useSpring(apply: (p: number) => void) {
 
 const NO_DRAG = 'input,textarea,select,[contenteditable="true"],.ag-chips,.mx-srcs,.kp-tile img';
 
-export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolean; agentOnly?: boolean }) {
+export default function SidePanel({ page: pageMode, agentOnly, pages = ['keep', 'groq'] }: { page?: boolean; agentOnly?: boolean; pages?: PanelKey[] }) {
+  const N = pages.length, last = N - 1;
+  const PAGES = pages.map((k) => META[k]);
   const wrap = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(0);
   const [tut, setTut] = useState(-1);
   const apply = useCallback((p: number) => {
     if (track.current) track.current.style.transform = `translate3d(${-p * 100}%,0,0)`;
-    wrap.current?.style.setProperty('--p', String(Math.max(0, Math.min(1, p))));
+    wrap.current?.style.setProperty('--p', String(Math.max(0, Math.min(last, p))));
   }, []);
   const spring = useSpring(apply);
   const pageRef = useRef(0);
-  const goTo = useCallback((i: number, v0?: number) => { pageRef.current = i; setPage(i); spring.go(i, v0); try { localStorage.setItem(PK, String(i)); } catch {} }, [spring]);
+  const goTo = useCallback((i: number, v0?: number) => { pageRef.current = i; setPage(i); spring.go(i, v0); try { localStorage.setItem(PK, pages[i]); } catch {} }, [spring, pages.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (agentOnly) return;
-    const i = localStorage.getItem(PK) === '1' ? 1 : 0; pageRef.current = i; setPage(i); spring.set(i);
+    const i = Math.max(0, pages.indexOf((localStorage.getItem(PK) || '') as PanelKey)); pageRef.current = i; setPage(i); spring.set(i);
     if (!localStorage.getItem(TK)) setTut(0);
-    const onAdd = () => goTo(1);
+    const onAdd = () => { const g = pages.indexOf('groq'); if (g >= 0) goTo(g); };
     window.addEventListener('m3x-open-agent', onAdd); return () => window.removeEventListener('m3x-open-agent', onAdd);
-  }, [agentOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [agentOnly, pages.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- pointer drag (touch / pen / mouse) ---- */
   const drag = useRef<{ id: number; x0: number; y0: number; p0: number; on: boolean; dead: boolean; samples: [number, number][] } | null>(null);
@@ -70,7 +74,7 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
       wrap.current?.classList.add('dragging');
     }
     let p = d.p0 - dx / width();
-    if (p < 0) p = p * 0.3; else if (p > 1) p = 1 + (p - 1) * 0.3; // rubber band
+    if (p < 0) p = p * 0.3; else if (p > last) p = last + (p - last) * 0.3; // rubber band
     spring.st.current.x = p; apply(p);
     d.samples.push([e.clientX, e.timeStamp]); if (d.samples.length > 6) d.samples.shift();
   };
@@ -82,7 +86,7 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
     const vx = b[1] > a[1] ? (b[0] - a[0]) / (b[1] - a[1]) : 0; // px/ms
     const pv = -(vx * 1000) / width(); // progress / s
     const proj = spring.st.current.x + pv * 0.18;
-    const to = Math.max(0, Math.min(1, Math.round(proj)));
+    const to = Math.max(0, Math.min(last, Math.round(proj)));
     spring.st.current.v = pv; goTo(to, pv);
     setTimeout(() => { moved.current = false; }, 0);
     void e;
@@ -96,29 +100,31 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
     const w = wheel.current;
     if (!w.t) { spring.stop(); w.start = pageRef.current; }
     let p = spring.st.current.x + e.deltaX / width();
-    p = Math.max(-0.15, Math.min(1.15, p));
+    p = Math.max(-0.15, Math.min(last + 0.15, p));
     spring.st.current.x = p; apply(p); w.dir = Math.sign(e.deltaX);
     clearTimeout(w.t);
     w.t = window.setTimeout(() => {
       w.t = 0; const x = spring.st.current.x;
-      const to = Math.abs(x - w.start) > 0.18 ? (w.dir > 0 ? 1 : 0) : w.start;
-      goTo(Math.max(0, Math.min(1, to)));
+      const to = Math.abs(x - w.start) > 0.18 ? w.start + (w.dir > 0 ? 1 : -1) : w.start;
+      goTo(Math.max(0, Math.min(last, to)));
     }, 110);
   };
 
   const finishTut = () => { setTut(-1); try { localStorage.setItem(TK, '1'); } catch {} };
+  const at = (k: PanelKey) => Math.max(0, pages.indexOf(k));
   const TUT: [string, string, string, number][] = [
-    ['swipe', 'Keep と Groq', '上のタブ、または左右スワイプ（トラックパッド・ドラッグ）でページを切り替えられます。', 0],
-    ['bookmarks', 'Keep に保存', 'タイムラインのポスト全体や、ポスト内の画像・動画・GIF を「Keep」へドラッグすると、あとで見返せます。', 0],
-    ['smart_toy', 'Groq', 'ポストを Groq にドロップするとコンテキストに（最大7件）。質問に答えます。Keep への保存・整理やノート作成は頼んだときだけ行います。', 1],
-    ['undo', 'いつでも元に戻せる', 'Groq の操作はステップごとに表示され、最後のまとめた操作は「元に戻す」で取り消せます。', 1],
+    ['explore', 'Xplore へようこそ', `このパネルは${PAGES.map((p) => p[1]).join('・')}を切り替えて使えます。上のタブ、または左右スワイプ（トラックパッド・ドラッグ）で移動できます。`, 0],
+    ...(pages.includes('trends') ? [['trending_up', 'トレンド', '日本のトレンドを表示。Groq キーがあれば「なぜ話題?」で理由を短く説明します。', at('trends')] as [string, string, string, number]] : []),
+    ['bookmarks', 'Keep に保存', 'ブックマークボタンでポストを Keep に保存。設定で「ドラッグで追加」をオンにすると、ポストや画像・動画を Keep へドラッグできます。', at('keep')],
+    ['smart_toy', 'Groq', '画面に表示中のポスト（最大7件）について質問できます。ポストをドロップして固定することも。Keep の保存・整理やノート作成は頼んだときだけ行います。', at('groq')],
+    ['undo', 'いつでも元に戻せる', 'Groq の操作はステップごとに表示され、最後のまとめた操作は「元に戻す」で取り消せます。X への投稿・いいね・フォローは Groq からは行いません。', at('groq')],
   ];
   useEffect(() => { if (tut >= 0 && TUT[tut]) goTo(TUT[tut][3]); }, [tut]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (agentOnly) return <div className={'sp' + (pageMode ? ' page' : '')}><div className="sp-head solo"><span className="sp-title"><GroqMark size={20} title="Groq" /></span></div><div className="sp-view"><Agent active /></div></div>;
 
   return (
-    <div ref={wrap} className={'sp' + (pageMode ? ' page' : '')} style={{ ['--p' as any]: page }}
+    <div ref={wrap} className={'sp' + (pageMode ? ' page' : '')} style={{ ['--p' as any]: page, ['--n' as any]: N }}
       onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onWheel={onWheel}
       onClickCapture={(e) => { if (moved.current) { e.preventDefault(); e.stopPropagation(); } }}>
       <div className="sp-head">
@@ -134,8 +140,9 @@ export default function SidePanel({ page: pageMode, agentOnly }: { page?: boolea
       </div>
       <div className="sp-view">
         <div className="sp-track" ref={track}>
-          <div className="sp-page" aria-hidden={page !== 0} inert={page !== 0 ? true : undefined}><MemoExplorer page={pageMode} /></div>
-          <div className="sp-page" aria-hidden={page !== 1} inert={page !== 1 ? true : undefined}><Agent active={page === 1} /></div>
+          {pages.map((k, i) => <div key={k} className="sp-page" aria-hidden={page !== i} inert={page !== i ? true : undefined}>
+            {k === 'trends' ? <TrendsPanel /> : k === 'keep' ? <MemoExplorer page={pageMode} /> : <Agent active={page === i} />}
+          </div>)}
         </div>
       </div>
       {tut >= 0 && TUT[tut] && (

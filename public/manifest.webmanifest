@@ -1,6 +1,7 @@
 {
-  "name": "EX",
-  "short_name": "EX",
+  "name": "Xplore（エクスプロア）",
+  "short_name": "Xplore",
+  "description": "Material 3 Expressive で作った X クライアント",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

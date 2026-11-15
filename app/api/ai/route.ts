@@ -22,6 +22,8 @@ export async function POST(req: NextRequest) {
     return { role: ['system', 'user', 'assistant'].includes(m?.role) ? m.role : 'user', content: c };
   });
   const max = Math.min(Math.max(Number(b.max_tokens) || 300, 1), 1024);
+  /* Local/test only: canned replies, never reaches Groq (enable with M3X_MOCK_GROQ=1). */
+  if (process.env.M3X_MOCK_GROQ === '1') return Response.json({ text: mock(messages, !!b.json), model: 'mock' });
   let last = '';
   for (const model of chain) {
     const oss = model.startsWith('openai/');
@@ -44,4 +46,16 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: `AIエラー: ${msg.slice(0, 200)}` }, { status: r.status });
   }
   return Response.json({ error: `AIエラー: ${last.slice(0, 200)}` }, { status: 502 });
+}
+
+function mock(messages: { role: string; content: string }[], json: boolean) {
+  const sys = messages[0]?.content || '';
+  if (!json) return /翻訳/.test(sys) ? '（モック）翻訳結果です。' : '（モック）要点: テスト用の応答です [1]\n・話題A [1]\n・話題B [2]';
+  if (/drafts/.test(sys)) return JSON.stringify({ drafts: ['なるほど、参考になります！', 'それな〜', 'ソースはどこですか？'] });
+  if (/tags/.test(sys)) return JSON.stringify({ tags: ['#テスト', '#Xplore'] });
+  if (/groups/.test(sys)) return JSON.stringify({ groups: [{ name: 'テスト', items: ['K1', 'K2'] }] });
+  if (/"next"/.test(sys) && !/tldr/.test(sys)) return JSON.stringify({ next: ['関連ニュース', '公式発表'] });
+  if (/tldr/.test(sys)) return JSON.stringify({ title: 'モック要約', tldr: 'テスト用の要約です。', points: [{ t: '要点1', refs: [1] }], top: [1], off: [], next: ['関連する話題を探す', '公式の発表'] });
+  if (/query/.test(sys)) { const q = messages[messages.length - 1]?.content || 'test'; return JSON.stringify({ query: q, keywords: [q], sort: 'top' }); }
+  return JSON.stringify({ reply: '（モック）表示中のポストについての回答です [C1]', actions: [] });
 }

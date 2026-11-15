@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Feed, Tabs, TweetCard, Icon, UserRow, Spinner } from '@/components/ui';
-import { useMe } from '@/components/Shell';
+import { useMe, useMQ } from '@/components/Shell';
+import { DigestButton } from '@/components/AiTools';
+import { deck, DECK_MIN } from '@/lib/deck';
 import { x, getFollows } from '@/lib/api';
 import type { XTweet, XUser } from '@/lib/types';
 
@@ -29,11 +31,13 @@ export default function Home() {
     f(); window.addEventListener('m3x-follows', f); return () => window.removeEventListener('m3x-follows', f);
   }, []);
   const guestFollowing = !authed && tab === 'following';
+  const deckWide = useMQ(`(min-width: ${DECK_MIN}px)`);
   return (
     <>
       <header className="colhead sticky">
-        <div className="ch-row show-sm"><div className="ch-t"><h1 className="brand">EX</h1></div></div>
-        <Tabs tabs={[['foryou', 'おすすめ'], ['following', 'フォロー中']]} value={tab} onChange={changeTab} />
+        <div className="ch-row show-sm"><div className="ch-t"><h1 className="brand">Xplore</h1></div><DigestButton compact /></div>
+        <div className="home-tabs"><Tabs tabs={[['foryou', 'おすすめ'], ['following', 'フォロー中']]} value={tab} onChange={changeTab} />
+          <div className="home-tools hide-sm"><DigestButton />{deckWide && <button className="icon-btn sm" onClick={() => deck.setOn(true)} title="マルチカラム表示" aria-label="マルチカラム表示"><Icon n="view_column" s={20} /></button>}</div></div>
       </header>
       {ids === null || !ready ? <Spinner />
         : guestFollowing && !ids.length ? <Suggest />

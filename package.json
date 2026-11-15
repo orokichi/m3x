@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/check-icons.mjs && next build",
+    "check": "node scripts/check-icons.mjs && node scripts/test-agent-context.mjs && node scripts/test-ai.mjs",
     "start": "next start"
   },
   "dependencies": {

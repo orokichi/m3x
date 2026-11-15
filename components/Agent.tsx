@@ -9,15 +9,16 @@ import GroqMark from './GroqMark';
 import { Icon, Loader } from './ui';
 import { useDrop } from './Memo';
 import { buildAgentRequest } from '@/lib/agentPrompt';
+import { getVisible, useVisible } from '@/lib/visible';
 
 type StepState = 'wait' | 'run' | 'done' | 'skip';
 interface Step { id: string; icon: string; run: string; done: string; state: StepState; thumbs?: string[]; exec: () => boolean | void }
 interface Run { status: 'running' | 'done' | 'undone'; steps: Omit<Step, 'exec'>[]; summary?: string }
 interface M { id: string; role: 'user' | 'assistant'; text?: string; run?: Run; pending?: boolean; err?: boolean; note?: boolean; ctxIds?: string[]; keepIds?: string[] }
 
-const SYS = `あなたはXクライアント「EX」のアシスタント「Groq」。必ず次のJSONだけを返す:
+const SYS = `あなたはXクライアント「Xplore（エクスプロア）」のアシスタント「Groq」。必ず次のJSONだけを返す:
 {"reply":"日本語の短い返答(最大4行)","actions":[]}
-基本はユーザーの質問に答えるだけで actions は必ず []。回答の根拠は今回渡された[コンテキスト]（と渡された場合の[Keep]）だけ。過去の会話に出てきた内容でも、今回のデータに無いものは使わない・言及しない。
+基本はユーザーの質問に答えるだけで actions は必ず []。回答の根拠は今回渡された[コンテキスト]（ユーザーが追加したポスト、または今画面に表示中のポスト）と、渡された場合の[Keep]だけ。Xへの投稿・いいね・リポスト・フォローは絶対に行わない（できない）。過去の会話に出てきた内容でも、今回のデータに無いものは使わない・言及しない。
 Keepへの保存・移動・整理・フォルダ作成・ノート作成は、ユーザーの今回の依頼がそれを明示的に指示したときだけ actions に入れる。自分から提案して実行しない。
 actions の要素:
 {"type":"create_folder","name":"フォルダ名"}
@@ -28,9 +29,11 @@ actions の要素:
 const QUICK: [string, string][] = [
   ['auto_awesome', 'Keep を整理して'],
   ['note_add', 'コンテキストのポストからノートを作って'],
-  ['summarize', 'コンテキストのポストを要約して'],
+  ['summarize', '表示中のポストを要約して'],
+  ['help', 'このポストの背景を教えて'],
 ];
 
+const AUTO = 'm3x.agentAuto';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const cut = (s: string, n: number) => { const a = Array.from(s.replace(/https?:\/\/t\.co\/\w+/g, '').replace(/\s+/g, ' ').trim()); return a.length > n ? a.slice(0, n).join('') + '…' : a.join(''); };
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -46,6 +49,11 @@ export default function Agent({ active }: { active: boolean }) {
   const list = useRef<HTMLDivElement>(null);
   const ta = useRef<HTMLTextAreaElement>(null);
   const d = useDrop((x) => addCtx(x.src));
+  /* Auto context: when no post was added by hand, use the posts currently on screen (max 7, read fresh at send time). */
+  const [auto, setAutoS] = useState(true);
+  useEffect(() => { setAutoS(localStorage.getItem(AUTO) !== '0'); }, []);
+  const setAuto = (v: boolean) => { setAutoS(v); try { localStorage.setItem(AUTO, v ? '1' : '0'); } catch { /* ignore */ } };
+  const vis = useVisible(active && auto && !ctx.length);
 
   /* --- deleted-context isolation -------------------------------------------
      Past replies were generated FROM the context posts, so the plain chat
@@ -81,7 +89,8 @@ export default function Agent({ active }: { active: boolean }) {
     /* Read the context store fresh at send time (never a render snapshot),
        so a deletion that just happened is always honoured. History turns
        built from a removed context post / Keep item are never resent. */
-    const ctxNow = getCtx();
+    const manual = getCtx();
+    const ctxNow = manual.length ? manual : auto ? getVisible(MAX_CTX) : [];
     const req = buildAgentRequest({ sys: SYS, msgs: msgsRef.current, ctx: ctxNow, keep, folders: getMemo().folders, text: t, from: histFrom });
     setMsgs((ms) => [...ms, { id: uidU, role: 'user', text: t, ctxIds: req.ctxIds, keepIds: req.keepIds }, { id: aid, role: 'assistant', pending: true, ctxIds: req.ctxIds, keepIds: req.keepIds }]);
     try {
@@ -173,7 +182,7 @@ export default function Agent({ active }: { active: boolean }) {
           <div className="ag-hello">
             <span className="ag-orb"><GroqMark compact size={28} /></span>
             <b><GroqMark size={20} title="Groq" /></b>
-            <p className="muted small">ポストをここへドラッグしてコンテキストに追加（最大{MAX_CTX}件）。Keep への保存・整理は頼んだときだけ行います。</p>
+            <p className="muted small">{auto ? `画面に表示中のポスト（最大${MAX_CTX}件）について質問できます。` : ''}ポストをドラッグして固定のコンテキストにもできます。Keep への保存・整理は頼んだときだけ行います。</p>
             <div className="ag-quick">{QUICK.map(([ic, t]) => <button key={t} className="chip sl" onClick={() => send(t)} disabled={busy}><Icon n={ic} s={18} />{t}</button>)}</div>
           </div>
         )}
@@ -189,7 +198,7 @@ export default function Agent({ active }: { active: boolean }) {
       </div>
       <div className="ag-dock">
         <div className={'ag-ctx' + (d.over ? ' over' : '')}>
-          <span className={'mx-count' + (ctx.length >= MAX_CTX ? ' full' : '')} title="コンテキストのポスト">{ctx.length}/{MAX_CTX}</span>
+          <span className={'mx-count' + (ctx.length >= MAX_CTX ? ' full' : '') + (!ctx.length && auto ? ' auto' : '')} title={ctx.length ? '追加したポスト' : '表示中のポスト'}>{ctx.length || (auto ? vis.length : 0)}/{MAX_CTX}</span>
           {ctx.length ? <>
             <div className="ag-chips">{ctx.map((s, i) => (
               <span key={s.id} className="ag-chip" title={`@${s.handle}: ${s.text}`}>
@@ -199,7 +208,13 @@ export default function Agent({ active }: { active: boolean }) {
               </span>
             ))}</div>
             <button className="icon-btn sm" onClick={clearCtx} aria-label="すべて外す" title="すべて外す"><Icon n="clear_all" s={18} /></button>
-          </> : <span className="muted small ell">{d.over ? 'ドロップして追加' : 'ポストをドラッグしてコンテキストに追加'}</span>}
+          </> : auto && vis.length && !d.over ? <div className="ag-chips auto" title="画面に表示中のポスト（送信時点のものを使います）">{vis.map((s, i) => (
+              <span key={s.id} className="ag-chip ghost" title={`@${s.handle}: ${s.text}`}>
+                {s.avatar ? <img className="r" src={img(s.avatar)} alt="" referrerPolicy="no-referrer" draggable={false} /> : <Icon n="article" s={16} />}
+                <span className="ell">C{i + 1} @{s.handle}</span>
+              </span>))}</div>
+            : <span className="muted small ell">{d.over ? 'ドロップして追加' : auto ? '表示中のポストがありません' : 'ポストをドラッグしてコンテキストに追加'}</span>}
+          {!ctx.length && <button type="button" className={'icon-btn sm' + (auto ? ' on' : '')} onClick={() => setAuto(!auto)} aria-pressed={auto} title={auto ? '表示中のポストを使う: オン' : '表示中のポストを使う: オフ'} aria-label="表示中のポストを使う"><Icon n={auto ? 'visibility' : 'visibility_off'} s={18} /></button>}
         </div>
         <form className="ag-in" onSubmit={(e) => { e.preventDefault(); send(q); }}>
           <textarea ref={ta} rows={1} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Groq に頼む…（例: Keep を整理して）" aria-label="メッセージ"
